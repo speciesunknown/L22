@@ -497,11 +497,83 @@ public partial class MainWindow : Window
         if (idx < 0 || idx >= ctx.Objects.Count)
         {
             PropertyTree.ItemsSource = null;
+            PanPropertyEditor.IsVisible = false;
             return;
         }
-        // Phase 4a: show the instance's own PropertyOverrides. Prefab-
-        // inherited defaults land once the prefab editor exists.
-        PropertyTree.ItemsSource = ctx.Objects[idx].PropertyOverrides;
+        var inst = ctx.Objects[idx];
+        PropertyTree.ItemsSource = inst.PropertyOverrides;
+        PanPropertyEditor.IsVisible = false;
+
+        // Pan the top-down camera over the selected object. The 3D viewport
+        // keeps its current position so the user can frame the shot themselves.
+        EditViewport.Camera.Position = new System.Numerics.Vector3(
+            inst.CellX + 0.5f,
+            EditViewport.Camera.Position.Y,
+            inst.CellY + 0.5f);
+        EditViewport.RequestFrame();
+    }
+
+    private L22.Editor.Models.Objects.PropertyNode? _editingNode;
+
+    private void OnPropertyTreeSelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (PropertyTree?.SelectedItem is not L22.Editor.Models.Objects.PropertyNode node)
+        {
+            PanPropertyEditor.IsVisible = false;
+            _editingNode = null;
+            return;
+        }
+        // Only leaves are editable here; group nodes get add/remove in a
+        // later pass.
+        if (node.Kind is not L22.Editor.Models.Objects.PropertyKind.Text
+                     and not L22.Editor.Models.Objects.PropertyKind.Number)
+        {
+            PanPropertyEditor.IsVisible = false;
+            _editingNode = null;
+            return;
+        }
+        _editingNode = node;
+        LblPropertyPath.Text = $"{node.Kind.ToString().ToLowerInvariant()}  ·  {node.Name}";
+        TxtPropertyValue.Text = node.Kind == L22.Editor.Models.Objects.PropertyKind.Text
+            ? node.TextValue ?? ""
+            : (node.NumberValue?.ToString() ?? "");
+        PanPropertyEditor.IsVisible = true;
+    }
+
+    private void OnApplyPropertyEdit(object? sender, RoutedEventArgs e)
+    {
+        var ctx = ViewModel.Active?.Context;
+        if (ctx is null || _editingNode is null) return;
+        string input = TxtPropertyValue?.Text ?? "";
+        string? newText = null;
+        double? newNumber = null;
+        if (_editingNode.Kind == L22.Editor.Models.Objects.PropertyKind.Number)
+        {
+            if (!double.TryParse(input, out var parsed))
+            {
+                LblPropertyPath.Text += "  (not a number)";
+                return;
+            }
+            newNumber = parsed;
+        }
+        else
+        {
+            newText = input;
+        }
+        var cmd = new L22.Editor.Models.Commands.EditPropertyCommand(ctx, _editingNode, newText, newNumber);
+        ctx.History.ExecuteAndPush(cmd);
+        // Reselecting the row re-syncs the tree's display line.
+        var idx = ObjectList?.SelectedIndex ?? -1;
+        if (idx >= 0 && idx < ctx.Objects.Count)
+            PropertyTree.ItemsSource = ctx.Objects[idx].PropertyOverrides;
+    }
+
+    private void OnRevertPropertyEdit(object? sender, RoutedEventArgs e)
+    {
+        if (_editingNode is null) return;
+        TxtPropertyValue.Text = _editingNode.Kind == L22.Editor.Models.Objects.PropertyKind.Text
+            ? _editingNode.TextValue ?? ""
+            : (_editingNode.NumberValue?.ToString() ?? "");
     }
 
     private void OnAddObjectClick(object? sender, RoutedEventArgs e)

@@ -4,6 +4,9 @@ using L22.Editor.Models.Objects;
 
 namespace L22.Editor.Models.Commands;
 
+// (EditPropertyCommand defined below between the add/delete commands.)
+
+
 // Undoable add/remove of an ObjectInstance. These commands mutate
 // EditorContext.Objects, not the World — but they still live on the
 // shared CommandHistory so Ctrl+Z crosses the terrain / object boundary.
@@ -29,6 +32,44 @@ public sealed class AddObjectCommand : IEditorCommand
     public void Undo(World.World world)
     {
         _ctx.Objects.Remove(_instance);
+        _ctx.RaiseObjectsChanged();
+    }
+}
+
+// Edits a single leaf PropertyNode's value in place. Captures before/after
+// so undo restores exactly. Only works for Text/Number leaves; Array /
+// Properties nodes aren't scalar-editable.
+public sealed class EditPropertyCommand : IEditorCommand
+{
+    private readonly EditorContext _ctx;
+    private readonly PropertyNode _node;
+    private readonly string? _beforeText, _afterText;
+    private readonly double? _beforeNumber, _afterNumber;
+
+    public string Name => $"Edit {_node.Name}";
+
+    public EditPropertyCommand(EditorContext ctx, PropertyNode node,
+                                string? newText, double? newNumber)
+    {
+        _ctx = ctx;
+        _node = node;
+        _beforeText = node.TextValue;
+        _beforeNumber = node.NumberValue;
+        _afterText = newText;
+        _afterNumber = newNumber;
+    }
+
+    public void Execute(World.World world)
+    {
+        _node.TextValue = _afterText;
+        _node.NumberValue = _afterNumber;
+        _ctx.RaiseObjectsChanged();
+    }
+
+    public void Undo(World.World world)
+    {
+        _node.TextValue = _beforeText;
+        _node.NumberValue = _beforeNumber;
         _ctx.RaiseObjectsChanged();
     }
 }

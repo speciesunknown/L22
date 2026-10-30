@@ -178,7 +178,8 @@
 
                     <TextBlock Text="Properties (selected object)" Foreground="#BBB" FontSize="11" Margin="0,6,0,0"/>
                     <Border Background="#1C1F26" CornerRadius="4" Padding="2" MinHeight="80">
-                        <TreeView Name="PropertyTree" Background="Transparent" BorderThickness="0">
+                        <TreeView Name="PropertyTree" Background="Transparent" BorderThickness="0"
+                                  SelectionChanged="OnPropertyTreeSelectionChanged">
                             <TreeView.ItemTemplate>
                                 <TreeDataTemplate DataType="objects:PropertyNode" ItemsSource="{Binding Children}">
                                     <TextBlock Text="{Binding DisplayLine}" Foreground="#DDD" FontSize="11" Padding="2,1"/>
@@ -186,6 +187,14 @@
                             </TreeView.ItemTemplate>
                         </TreeView>
                     </Border>
+                    <StackPanel Name="PanPropertyEditor" IsVisible="False" Spacing="4">
+                        <TextBlock Name="LblPropertyPath" Text="(select a leaf)" Foreground="#AAA" FontSize="10"/>
+                        <TextBox Name="TxtPropertyValue" FontSize="12"/>
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <Button Content="Apply" Click="OnApplyPropertyEdit" HorizontalAlignment="Stretch"/>
+                            <Button Content="Revert" Click="OnRevertPropertyEdit" HorizontalAlignment="Stretch"/>
+                        </StackPanel>
+                    </StackPanel>
 
                     <Separator Margin="0,8"/>
                     <TextBlock Text="Agent server" Foreground="#DDD" FontSize="14" FontWeight="SemiBold"/>
