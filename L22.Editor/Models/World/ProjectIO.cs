@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using L22.Editor.Models;
+using L22.Editor.Models.Objects;
 
 namespace L22.Editor.Models.World;
 
@@ -41,6 +42,7 @@ public static class ProjectIO
     {
         public World World { get; init; } = null!;
         public DocumentKind Kind { get; init; }
+        public List<ObjectInstance> Objects { get; init; } = new();
     }
 
     private sealed class Index
@@ -54,7 +56,8 @@ public static class ProjectIO
     private sealed class ChunkEntry { [JsonPropertyName("cx")] public int Cx { get; set; } [JsonPropertyName("cy")] public int Cy { get; set; } }
     private sealed class CornerEntry { [JsonPropertyName("cx")] public int Cx { get; set; } [JsonPropertyName("cy")] public int Cy { get; set; } [JsonPropertyName("value")] public float Value { get; set; } }
 
-    public static void Save(World world, DocumentKind kind, string folderPath)
+    public static void Save(World world, DocumentKind kind, string folderPath,
+                            IReadOnlyList<ObjectInstance>? objects = null)
     {
         // Save-As can target an existing file (old binary) — convert it to
         // a folder, overwriting the file in place.
@@ -94,6 +97,10 @@ public static class ProjectIO
 
         File.WriteAllText(Path.Combine(folderPath, "index.json"),
             JsonSerializer.Serialize(index, new JsonSerializerOptions { WriteIndented = true }));
+
+        // Always write objects.json so a reader doesn't guess at absence vs
+        // never-written. Empty list is written as {"version":1,"instances":[]}.
+        ObjectIO.SaveInstances(folderPath, objects ?? Array.Empty<ObjectInstance>());
     }
 
     public static LoadResult Load(string path, string fileId)
@@ -130,7 +137,8 @@ public static class ProjectIO
 
         var kind = Enum.TryParse<DocumentKind>(index.Kind, ignoreCase: true, out var k)
             ? k : DocumentKind.Scene;
-        return new LoadResult { World = world, Kind = kind };
+        var objects = ObjectIO.LoadInstances(folderPath);
+        return new LoadResult { World = world, Kind = kind, Objects = objects };
     }
 
     private static void WriteChunkPngs(string chunksDir, Chunk ch)

@@ -80,6 +80,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
         var fileId = System.IO.Path.GetFileNameWithoutExtension(path);
         var result = Models.World.ProjectIO.Load(path, fileId);
         var ctx = new EditorContext(result.World);
+        ctx.Objects.AddRange(result.Objects);
+        ctx.Prefabs.SetLibraryDir(ResolvePrefabLibraryDir(path));
         // Defensive: a freshly-loaded doc should start clean even if some
         // future World-build path pushes commands during load.
         ctx.History.MarkSaved();
@@ -95,11 +97,26 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public void SaveActive(string path)
     {
         if (_active is null) return;
-        Models.World.ProjectIO.Save(_active.Context.World, _active.Kind, path);
+        Models.World.ProjectIO.Save(
+            _active.Context.World, _active.Kind, path, _active.Context.Objects);
         _active.FilePath = path;
         _active.Name = System.IO.Path.GetFileNameWithoutExtension(path);
+        _active.Context.Prefabs.SetLibraryDir(ResolvePrefabLibraryDir(path));
         _active.Context.History.MarkSaved();
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsDirty)));
+    }
+
+    // Convention: Prefabs/ sits next to the project's parent directory.
+    // scene at Game/Levels/scene-3.l22proj → library at Game/Prefabs/.
+    // Scenes dropped at odd paths (no "Levels" parent) still resolve to
+    // "<project parent>/Prefabs" which may or may not exist; the library
+    // handles the missing case.
+    private static string? ResolvePrefabLibraryDir(string scenePath)
+    {
+        var sceneDir = System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(scenePath));
+        if (sceneDir is null) return null;
+        var parent = System.IO.Path.GetDirectoryName(sceneDir);
+        return parent is null ? null : System.IO.Path.Combine(parent, "Prefabs");
     }
 
     public void SetActiveLayer(LayerKind layer)

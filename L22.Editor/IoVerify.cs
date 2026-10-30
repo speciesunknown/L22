@@ -1,6 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Text.Json;
 using L22.Editor.Models;
+using L22.Editor.Models.Objects;
 using L22.Editor.Models.World;
 
 namespace L22.Editor;
@@ -16,10 +19,11 @@ internal static class IoVerify
         try
         {
             var world = BuildTestWorld("source");
+            var objects = BuildTestObjects();
             var tmpPath = Path.Combine(Path.GetTempPath(),
                 $"l22-io-{Guid.NewGuid():N}.l22proj");
 
-            ProjectIO.Save(world, DocumentKind.Scene, tmpPath);
+            ProjectIO.Save(world, DocumentKind.Scene, tmpPath, objects);
             long folderBytes = DirectorySize(tmpPath);
             int fileCount = Directory.GetFiles(tmpPath, "*", SearchOption.AllDirectories).Length;
 
@@ -29,6 +33,7 @@ internal static class IoVerify
             string? reason = CompareWorlds(world, reloaded.World);
             if (reloaded.Kind != DocumentKind.Scene)
                 reason ??= $"kind mismatch: expected Scene, got {reloaded.Kind}";
+            reason ??= CompareObjects(objects, reloaded.Objects);
             if (reason is not null)
             {
                 Console.Error.WriteLine($"FAIL: {reason}");
@@ -36,7 +41,8 @@ internal static class IoVerify
             }
 
             Console.Out.WriteLine($"OK: round-trip clean. folder bytes = {folderBytes}, "
-                                + $"files = {fileCount}, chunks = {world.Chunks.Count}");
+                                + $"files = {fileCount}, chunks = {world.Chunks.Count}, "
+                                + $"objects = {objects.Count}");
             return 0;
         }
         catch (Exception ex)
@@ -52,6 +58,58 @@ internal static class IoVerify
         foreach (var f in Directory.GetFiles(dir, "*", SearchOption.AllDirectories))
             sum += new FileInfo(f).Length;
         return sum;
+    }
+
+    // Exercise every PropertyKind, a nested properties tree, an array, an
+    // icon with a non-default grid cell, and overrides on each field so a
+    // regression in sparse-override handling shows up.
+    private static List<ObjectInstance> BuildTestObjects()
+    {
+        return new List<ObjectInstance>
+        {
+            new ObjectInstance
+            {
+                Id = "inst-slime-1",
+                PrefabId = "enemy-slime",
+                CellX = 10, CellY = 20,
+                YOffsetWorld = 0.5f,
+                NameOverride = "Slime King",
+                PropertyOverrides =
+                {
+                    new PropertyNode { Name = "hp", Kind = PropertyKind.Number, NumberValue = 42 },
+                    new PropertyNode { Name = "loot", Kind = PropertyKind.Array, Children = new List<PropertyNode>
+                    {
+                        new PropertyNode { Name = "", Kind = PropertyKind.Text, TextValue = "gold" },
+                        new PropertyNode { Name = "", Kind = PropertyKind.Text, TextValue = "potion" },
+                    } },
+                    new PropertyNode { Name = "ai", Kind = PropertyKind.Properties, Children = new List<PropertyNode>
+                    {
+                        new PropertyNode { Name = "aggro", Kind = PropertyKind.Number, NumberValue = 0.8 },
+                        new PropertyNode { Name = "patrol", Kind = PropertyKind.Text, TextValue = "circle" },
+                    } },
+                },
+            },
+            new ObjectInstance
+            {
+                Id = "inst-chest-1",
+                PrefabId = "chest",
+                CellX = 50, CellY = 50,
+                IconOverride = new IconRef { ImagePath = "icons/chest.png", GridCols = 4, GridRows = 2, CellCol = 2, CellRow = 1 },
+            },
+        };
+    }
+
+    private static string? CompareObjects(List<ObjectInstance> a, List<ObjectInstance> b)
+    {
+        if (a.Count != b.Count) return $"object count differs: {a.Count} vs {b.Count}";
+        var opts = new JsonSerializerOptions { WriteIndented = false };
+        for (int i = 0; i < a.Count; i++)
+        {
+            var sa = JsonSerializer.Serialize(a[i], opts);
+            var sb = JsonSerializer.Serialize(b[i], opts);
+            if (sa != sb) return $"object #{i} differs: {sa} vs {sb}";
+        }
+        return null;
     }
 
     private static World BuildTestWorld(string fileId)

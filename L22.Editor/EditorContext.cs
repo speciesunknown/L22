@@ -1,4 +1,6 @@
+using System.Collections.Generic;
 using L22.Editor.Models.Commands;
+using L22.Editor.Models.Objects;
 using L22.Editor.Models.Tools;
 using L22.Editor.Models.World;
 using L22.Editor.ViewModels;
@@ -14,6 +16,12 @@ public sealed class EditorContext
     public CommandHistory History { get; }
     public BrushViewModel Brush { get; }
     public ToolManager Tools { get; }
+    // Scene-local object placements. Flat list (no spatial index yet —
+    // scenes are small enough that linear scans are fine).
+    public List<ObjectInstance> Objects { get; } = new();
+    // Shared prefab library for the project. Multiple open scenes may
+    // reference the same instance; wire SetLibraryDir at load time.
+    public PrefabLibrary Prefabs { get; } = new();
 
     public EditorContext(string fileId) : this(new World(fileId)) { }
 
