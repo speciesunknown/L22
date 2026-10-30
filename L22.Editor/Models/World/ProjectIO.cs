@@ -3,37 +3,39 @@ using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using L22.Editor.Models;
 
 namespace L22.Editor.Models.World;
 
-// Binary save/load for .l22proj files.
+// Project format v3 — a folder, with per-chunk PNGs and an index.
 //
-// Container is gzip. Inner stream:
-//   Magic         : 8 bytes "L22PROJ\0"
-//   Version       : uint16 LE
-//   DocKind       : byte  (0 = Scene, 1 = Prefab)
-//   Reserved      : 4 × int32 (bounds placeholders, zero today)
-//   ChunkCount    : int32
-//   For each chunk:
-//     cx, cy      : int32, int32
-//     TerrainType : byte[Chunk.Size * Chunk.Size]  (row-major: ly*Size + lx)
-//     Elevation   : float[Chunk.Size * Chunk.Size] (same ordering)
-//   Named sections (0..N, until EOF):
-//     tag    : 4 bytes ASCII
-//     length : int32 (payload byte count)
-//     payload: bytes
+//   scene-name.l22proj/
+//     index.json               — version, kind, chunk list, chunk-corner
+//                                heights. Sparse: only chunks that exist in
+//                                the world appear here.
+//     chunks/
+//       <cx>_<cy>.elevation.png  — 32×32 RGBA. R=G=B=round(elevation × 255);
+//                                  A always 255.
+//       <cx>_<cy>.terrain.png    — 32×32 RGBA. Channel-weighted terrain:
+//                                    (0,0,0) = Unset / no geometry
+//                                    (255,0,0) = Sand
+//                                    (0,255,0) = Grass
+//                                    (0,0,255) = Rock
 //
-// Known section tags:
-//   "CCVL" — chunk-corner elevation.
-//              count : int32
-//              entries : (int32 cx, int32 cy, float value) × count
-// Unknown tags are skipped so new sections can be added without breaking
-// older savefiles.
+// Pixel (0,0) in each chunk PNG is local (lx=0, ly=0). Growing the world
+// means adding new rows to index.chunks and dropping two more PNGs in
+// chunks/ — no atlas repack.
+//
+// Legacy loaders:
+//   - A single file (not a folder) is treated as the v1 gzip-binary save
+//     (scene-2 and earlier still open).
 public static class ProjectIO
 {
-    private const int CurrentVersion = 1;
-    private static readonly byte[] Magic = Encoding.ASCII.GetBytes("L22PROJ\0");
+    private const int CurrentVersion = 3;
+    private const int LegacyBinaryVersion = 1;
+    private static readonly byte[] LegacyMagic = Encoding.ASCII.GetBytes("L22PROJ\0");
 
     public sealed class LoadResult
     {
@@ -41,56 +43,190 @@ public static class ProjectIO
         public DocumentKind Kind { get; init; }
     }
 
-    public static void Save(World world, DocumentKind kind, string path)
+    private sealed class Index
     {
-        // Write to a sibling .tmp then atomic-replace. A crash mid-write
-        // leaves the previous saved file intact instead of a truncated one.
-        var tmp = path + ".tmp";
-        using (var fs = new FileStream(tmp, FileMode.Create, FileAccess.Write))
-        using (var gz = new GZipStream(fs, CompressionLevel.Optimal))
-        using (var w = new BinaryWriter(gz, Encoding.UTF8, leaveOpen: false))
+        [JsonPropertyName("version")]      public int Version { get; set; } = CurrentVersion;
+        [JsonPropertyName("kind")]         public string Kind { get; set; } = "Scene";
+        [JsonPropertyName("chunkSize")]    public int ChunkSize { get; set; } = Chunk.Size;
+        [JsonPropertyName("chunks")]       public List<ChunkEntry> Chunks { get; set; } = new();
+        [JsonPropertyName("chunkCorners")] public List<CornerEntry> ChunkCorners { get; set; } = new();
+    }
+    private sealed class ChunkEntry { [JsonPropertyName("cx")] public int Cx { get; set; } [JsonPropertyName("cy")] public int Cy { get; set; } }
+    private sealed class CornerEntry { [JsonPropertyName("cx")] public int Cx { get; set; } [JsonPropertyName("cy")] public int Cy { get; set; } [JsonPropertyName("value")] public float Value { get; set; } }
+
+    public static void Save(World world, DocumentKind kind, string folderPath)
+    {
+        // Save-As can target an existing file (old binary) — convert it to
+        // a folder, overwriting the file in place.
+        if (File.Exists(folderPath)) File.Delete(folderPath);
+        Directory.CreateDirectory(folderPath);
+        var chunksDir = Path.Combine(folderPath, "chunks");
+        Directory.CreateDirectory(chunksDir);
+
+        var index = new Index
         {
-            w.Write(Magic);
-            w.Write((ushort)CurrentVersion);
-            w.Write((byte)kind);
-            w.Write(0); w.Write(0); w.Write(0); w.Write(0);  // reserved bounds
+            Version = CurrentVersion,
+            Kind = kind.ToString(),
+            ChunkSize = Chunk.Size,
+            Chunks = new List<ChunkEntry>(world.Chunks.Count),
+            ChunkCorners = BuildCornerList(world),
+        };
 
-            var chunks = world.Chunks;
-            w.Write(chunks.Count);
-            foreach (var kv in chunks)
-            {
-                var c = kv.Value;
-                w.Write(c.Coord.X);
-                w.Write(c.Coord.Y);
-                WriteChunkCells(w, c);
-            }
+        foreach (var kv in world.Chunks)
+        {
+            var ch = kv.Value;
+            index.Chunks.Add(new ChunkEntry { Cx = ch.Coord.X, Cy = ch.Coord.Y });
 
-            WriteCornerSection(w, world);
+            WriteChunkPngs(chunksDir, ch);
         }
 
-        if (File.Exists(path)) File.Replace(tmp, path, destinationBackupFileName: null);
-        else File.Move(tmp, path);
+        // Prune stale per-chunk PNGs left over from a previous save (chunks
+        // the user has since removed). Any PNG not matching an index entry
+        // goes.
+        var kept = new HashSet<string>(index.Chunks.Count * 2);
+        foreach (var e in index.Chunks)
+        {
+            kept.Add(ChunkPngName(e.Cx, e.Cy, "elevation"));
+            kept.Add(ChunkPngName(e.Cx, e.Cy, "terrain"));
+        }
+        foreach (var file in Directory.EnumerateFiles(chunksDir, "*.png"))
+            if (!kept.Contains(Path.GetFileName(file))) File.Delete(file);
+
+        File.WriteAllText(Path.Combine(folderPath, "index.json"),
+            JsonSerializer.Serialize(index, new JsonSerializerOptions { WriteIndented = true }));
     }
 
     public static LoadResult Load(string path, string fileId)
+    {
+        if (Directory.Exists(path)) return LoadFolder(path, fileId);
+        if (File.Exists(path))      return LoadLegacyBinary(path, fileId);
+        throw new FileNotFoundException($"project path not found: {path}");
+    }
+
+    private static LoadResult LoadFolder(string folderPath, string fileId)
+    {
+        var indexPath = Path.Combine(folderPath, "index.json");
+        if (!File.Exists(indexPath))
+            throw new InvalidDataException($"missing index.json in {folderPath}");
+
+        var index = JsonSerializer.Deserialize<Index>(File.ReadAllText(indexPath))
+            ?? throw new InvalidDataException("index.json is empty/invalid");
+        if (index.Version > CurrentVersion)
+            throw new InvalidDataException($"unsupported folder version {index.Version} (editor supports up to {CurrentVersion})");
+        if (index.ChunkSize != Chunk.Size)
+            throw new InvalidDataException($"chunkSize mismatch: file={index.ChunkSize}, editor={Chunk.Size}");
+
+        var chunksDir = Path.Combine(folderPath, "chunks");
+        var world = new World(fileId);
+        foreach (var e in index.Chunks)
+        {
+            var ch = world.GetOrCreateChunk(new ChunkCoord(e.Cx, e.Cy));
+            ReadChunkPngs(chunksDir, ch);
+            ch.MeshDirty = true;
+        }
+
+        foreach (var c in index.ChunkCorners)
+            world.SetChunkCornerElevation(c.Cx, c.Cy, c.Value);
+
+        var kind = Enum.TryParse<DocumentKind>(index.Kind, ignoreCase: true, out var k)
+            ? k : DocumentKind.Scene;
+        return new LoadResult { World = world, Kind = kind };
+    }
+
+    private static void WriteChunkPngs(string chunksDir, Chunk ch)
+    {
+        int size = Chunk.Size;
+        var elev = new byte[size * size * 4];
+        var terr = new byte[size * size * 4];
+        for (int ly = 0; ly < size; ly++)
+        for (int lx = 0; lx < size; lx++)
+        {
+            int idx = (ly * size + lx) * 4;
+
+            byte eByte = (byte)Math.Clamp((int)MathF.Round(ch.Elevation[lx, ly] * 255f), 0, 255);
+            elev[idx + 0] = eByte;
+            elev[idx + 1] = eByte;
+            elev[idx + 2] = eByte;
+            elev[idx + 3] = 255;
+
+            byte t = ch.TerrainType[lx, ly];
+            terr[idx + 0] = t == (byte)TerrainType.Sand  ? (byte)255 : (byte)0;
+            terr[idx + 1] = t == (byte)TerrainType.Grass ? (byte)255 : (byte)0;
+            terr[idx + 2] = t == (byte)TerrainType.Rock  ? (byte)255 : (byte)0;
+            terr[idx + 3] = 255;
+        }
+        PngWriter.WriteRgba(Path.Combine(chunksDir, ChunkPngName(ch.Coord.X, ch.Coord.Y, "elevation")),
+                             elev, size, size, flipY: false);
+        PngWriter.WriteRgba(Path.Combine(chunksDir, ChunkPngName(ch.Coord.X, ch.Coord.Y, "terrain")),
+                             terr, size, size, flipY: false);
+    }
+
+    private static void ReadChunkPngs(string chunksDir, Chunk ch)
+    {
+        int size = Chunk.Size;
+        var elevPath = Path.Combine(chunksDir, ChunkPngName(ch.Coord.X, ch.Coord.Y, "elevation"));
+        var terrPath = Path.Combine(chunksDir, ChunkPngName(ch.Coord.X, ch.Coord.Y, "terrain"));
+        var (ePx, ew, eh) = PngReader.ReadRgba(elevPath);
+        var (tPx, tw, th) = PngReader.ReadRgba(terrPath);
+        if (ew != size || eh != size || tw != size || th != size)
+            throw new InvalidDataException(
+                $"chunk ({ch.Coord.X},{ch.Coord.Y}) PNG dimensions wrong: "
+                + $"elevation {ew}x{eh}, terrain {tw}x{th}, expected {size}x{size}");
+
+        for (int ly = 0; ly < size; ly++)
+        for (int lx = 0; lx < size; lx++)
+        {
+            int idx = (ly * size + lx) * 4;
+            byte eByte = ePx[idx];
+            byte tR = tPx[idx + 0];
+            byte tG = tPx[idx + 1];
+            byte tB = tPx[idx + 2];
+
+            ch.Elevation[lx, ly] = eByte / 255f;
+
+            byte type = (byte)TerrainType.Unset;
+            if (tR > 0 || tG > 0 || tB > 0)
+            {
+                type = tR >= tG && tR >= tB ? (byte)TerrainType.Sand
+                     : tG >= tB             ? (byte)TerrainType.Grass
+                     :                        (byte)TerrainType.Rock;
+            }
+            ch.TerrainType[lx, ly] = type;
+        }
+    }
+
+    private static string ChunkPngName(int cx, int cy, string layer)
+        => $"{cx}_{cy}.{layer}.png";
+
+    private static List<CornerEntry> BuildCornerList(World world)
+    {
+        var list = new List<CornerEntry>();
+        foreach (var (cx, cy) in world.EnumerateSetChunkCorners())
+            list.Add(new CornerEntry { Cx = cx, Cy = cy, Value = world.GetChunkCornerElevation(cx, cy) });
+        return list;
+    }
+
+    // ---- Legacy binary (v1) loader -----------------------------------------
+
+    private static LoadResult LoadLegacyBinary(string path, string fileId)
     {
         using var fs = new FileStream(path, FileMode.Open, FileAccess.Read);
         using var gz = new GZipStream(fs, CompressionMode.Decompress);
         using var r = new BinaryReader(gz, Encoding.UTF8, leaveOpen: false);
 
-        var magic = r.ReadBytes(Magic.Length);
-        if (magic.Length != Magic.Length)
-            throw new InvalidDataException("Not a .l22proj file (truncated magic).");
-        for (int i = 0; i < Magic.Length; i++)
-            if (magic[i] != Magic[i])
-                throw new InvalidDataException("Not a .l22proj file (magic mismatch).");
+        var magic = r.ReadBytes(LegacyMagic.Length);
+        if (magic.Length != LegacyMagic.Length)
+            throw new InvalidDataException($"not a legacy .l22proj file (truncated magic): {path}");
+        for (int i = 0; i < LegacyMagic.Length; i++)
+            if (magic[i] != LegacyMagic[i])
+                throw new InvalidDataException($"unknown file format: {path}");
 
         ushort version = r.ReadUInt16();
-        if (version > CurrentVersion)
-            throw new InvalidDataException($"Unsupported .l22proj version {version} (editor supports up to {CurrentVersion}).");
+        if (version > LegacyBinaryVersion)
+            throw new InvalidDataException($"unsupported legacy version {version}");
 
         var kind = (DocumentKind)r.ReadByte();
-        r.ReadInt32(); r.ReadInt32(); r.ReadInt32(); r.ReadInt32();  // reserved bounds
+        r.ReadInt32(); r.ReadInt32(); r.ReadInt32(); r.ReadInt32();  // reserved
 
         var world = new World(fileId);
         int chunkCount = r.ReadInt32();
@@ -99,103 +235,57 @@ public static class ProjectIO
             int cx = r.ReadInt32();
             int cy = r.ReadInt32();
             var ch = world.GetOrCreateChunk(new ChunkCoord(cx, cy));
-            ReadChunkCells(r, ch);
+            for (int ly = 0; ly < Chunk.Size; ly++)
+                for (int lx = 0; lx < Chunk.Size; lx++)
+                    ch.TerrainType[lx, ly] = r.ReadByte();
+            for (int ly = 0; ly < Chunk.Size; ly++)
+                for (int lx = 0; lx < Chunk.Size; lx++)
+                    ch.Elevation[lx, ly] = r.ReadSingle();
             ch.MeshDirty = true;
         }
 
-        // Named sections — stop when the stream runs out mid-header.
         while (true)
         {
-            var tag = ReadTagOrEof(r);
-            if (tag is null) break;
+            var tagBytes = r.ReadBytes(4);
+            if (tagBytes.Length < 4) break;
+            string tag = Encoding.ASCII.GetString(tagBytes);
             int len = r.ReadInt32();
-            if (tag == "CCVL") ReadCornerSection(r, world, len);
-            else SkipBytes(r, len);
+            if (tag == "CCVL")
+            {
+                int count = r.ReadInt32();
+                int consumed = 4;
+                int entryBytes = Math.Min(count * 12, Math.Max(0, len - consumed));
+                int entries = entryBytes / 12;
+                for (int i = 0; i < entries; i++)
+                {
+                    int cx = r.ReadInt32();
+                    int cy = r.ReadInt32();
+                    float v = r.ReadSingle();
+                    world.SetChunkCornerElevation(cx, cy, v);
+                    consumed += 12;
+                }
+                int leftover = len - consumed;
+                SkipBytes(r, leftover);
+            }
+            else
+            {
+                SkipBytes(r, len);
+            }
         }
 
         return new LoadResult { World = world, Kind = kind };
     }
 
-    private static void WriteChunkCells(BinaryWriter w, Chunk c)
-    {
-        int size = Chunk.Size;
-        for (int ly = 0; ly < size; ly++)
-            for (int lx = 0; lx < size; lx++)
-                w.Write(c.TerrainType[lx, ly]);
-        for (int ly = 0; ly < size; ly++)
-            for (int lx = 0; lx < size; lx++)
-                w.Write(c.Elevation[lx, ly]);
-    }
-
-    private static void ReadChunkCells(BinaryReader r, Chunk c)
-    {
-        int size = Chunk.Size;
-        for (int ly = 0; ly < size; ly++)
-            for (int lx = 0; lx < size; lx++)
-                c.TerrainType[lx, ly] = r.ReadByte();
-        for (int ly = 0; ly < size; ly++)
-            for (int lx = 0; lx < size; lx++)
-                c.Elevation[lx, ly] = r.ReadSingle();
-    }
-
-    private static void WriteCornerSection(BinaryWriter w, World world)
-    {
-        var corners = new List<(int cx, int cy, float v)>();
-        foreach (var (cx, cy) in world.EnumerateSetChunkCorners())
-            corners.Add((cx, cy, world.GetChunkCornerElevation(cx, cy)));
-        if (corners.Count == 0) return;
-
-        w.Write(Encoding.ASCII.GetBytes("CCVL"));
-        int payloadBytes = 4 + corners.Count * 12;
-        w.Write(payloadBytes);
-        w.Write(corners.Count);
-        foreach (var e in corners)
-        {
-            w.Write(e.cx);
-            w.Write(e.cy);
-            w.Write(e.v);
-        }
-    }
-
-    private static void ReadCornerSection(BinaryReader r, World world, int length)
-    {
-        // Honor the length field so a future CCVL extension (extra trailing
-        // fields) stays stream-aligned for old readers. We consume exactly
-        // `length` bytes, parse what we understand (count + 12-byte entries),
-        // skip any trailing bytes.
-        int count = r.ReadInt32();
-        int consumed = 4;
-        int entryBytes = Math.Min(count * 12, Math.Max(0, length - consumed));
-        int fullEntries = entryBytes / 12;
-        for (int i = 0; i < fullEntries; i++)
-        {
-            int cx = r.ReadInt32();
-            int cy = r.ReadInt32();
-            float v = r.ReadSingle();
-            world.SetChunkCornerElevation(cx, cy, v);
-            consumed += 12;
-        }
-        int remaining = length - consumed;
-        if (remaining > 0) SkipBytes(r, remaining);
-    }
-
-    private static string? ReadTagOrEof(BinaryReader r)
-    {
-        var buf = r.ReadBytes(4);
-        if (buf.Length < 4) return null;
-        return Encoding.ASCII.GetString(buf);
-    }
-
     private static void SkipBytes(BinaryReader r, int count)
     {
-        // GZipStream doesn't support Seek, so drain.
+        if (count <= 0) return;
         var buf = new byte[Math.Min(4096, count)];
         int remaining = count;
         while (remaining > 0)
         {
             int take = Math.Min(buf.Length, remaining);
             int read = r.Read(buf, 0, take);
-            if (read == 0) throw new EndOfStreamException("Section payload truncated.");
+            if (read == 0) return;
             remaining -= read;
         }
     }

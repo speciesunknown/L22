@@ -20,10 +20,11 @@ internal static class IoVerify
                 $"l22-io-{Guid.NewGuid():N}.l22proj");
 
             ProjectIO.Save(world, DocumentKind.Scene, tmpPath);
-            var fileSize = new FileInfo(tmpPath).Length;
+            long folderBytes = DirectorySize(tmpPath);
+            int fileCount = Directory.GetFiles(tmpPath, "*", SearchOption.AllDirectories).Length;
 
             var reloaded = ProjectIO.Load(tmpPath, "reload");
-            File.Delete(tmpPath);
+            Directory.Delete(tmpPath, recursive: true);
 
             string? reason = CompareWorlds(world, reloaded.World);
             if (reloaded.Kind != DocumentKind.Scene)
@@ -34,8 +35,8 @@ internal static class IoVerify
                 return 1;
             }
 
-            Console.Out.WriteLine($"OK: round-trip clean. file size = {fileSize} bytes, "
-                                + $"chunks = {world.Chunks.Count}");
+            Console.Out.WriteLine($"OK: round-trip clean. folder bytes = {folderBytes}, "
+                                + $"files = {fileCount}, chunks = {world.Chunks.Count}");
             return 0;
         }
         catch (Exception ex)
@@ -43,6 +44,14 @@ internal static class IoVerify
             Console.Error.WriteLine($"FAIL: {ex.GetType().Name}: {ex.Message}");
             return 1;
         }
+    }
+
+    private static long DirectorySize(string dir)
+    {
+        long sum = 0;
+        foreach (var f in Directory.GetFiles(dir, "*", SearchOption.AllDirectories))
+            sum += new FileInfo(f).Length;
+        return sum;
     }
 
     private static World BuildTestWorld(string fileId)
@@ -71,6 +80,10 @@ internal static class IoVerify
         if (a.Chunks.Count != b.Chunks.Count)
             return $"chunk count differs: {a.Chunks.Count} vs {b.Chunks.Count}";
 
+        // Elevation is quantised to 8 bits (0..255) by the folder format,
+        // so the round-trip can only be exact modulo 1/255.
+        const float elevTolerance = 1f / 255f + 1e-6f;
+
         foreach (var kv in a.Chunks)
         {
             var cb = b.TryGetChunk(kv.Key);
@@ -82,9 +95,10 @@ internal static class IoVerify
                     if (ca.TerrainType[lx, ly] != cb.TerrainType[lx, ly])
                         return $"terrain mismatch at chunk {kv.Key} local ({lx},{ly}): "
                              + $"{ca.TerrainType[lx, ly]} vs {cb.TerrainType[lx, ly]}";
-                    if (ca.Elevation[lx, ly] != cb.Elevation[lx, ly])
+                    float diff = MathF.Abs(ca.Elevation[lx, ly] - cb.Elevation[lx, ly]);
+                    if (diff > elevTolerance)
                         return $"elevation mismatch at chunk {kv.Key} local ({lx},{ly}): "
-                             + $"{ca.Elevation[lx, ly]} vs {cb.Elevation[lx, ly]}";
+                             + $"{ca.Elevation[lx, ly]} vs {cb.Elevation[lx, ly]} (diff {diff})";
                 }
         }
 

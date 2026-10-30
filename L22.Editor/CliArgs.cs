@@ -18,6 +18,17 @@ public sealed class CliArgs
     // Prints OK and exits 0, or FAIL + reason and exits 1. No GUI.
     public bool VerifyIoMode { get; private set; }
 
+    // Headless project creation. If NewPath is set, build a World
+    // (optionally seeded by TemplateName) and save a .l22proj to NewPath,
+    // then exit. The GUI never comes up in this mode.
+    public string? NewPath { get; private set; }
+    public string? TemplateName { get; private set; }
+    public bool ForceOverwrite { get; private set; }
+
+    // Launch the editor with a .l22proj folder pre-loaded. Combines with
+    // --yolo so an agent harness can drive it over IPC immediately.
+    public string? OpenPath { get; private set; }
+
     // Test mode: any agent connection is auto-approved (no PIN dialog) and
     // the status label flashes a YOLO banner so you don't forget. Intended
     // for driving the editor from an audit agent.
@@ -43,6 +54,18 @@ public sealed class CliArgs
                     break;
                 case "--verify-io":
                     r.VerifyIoMode = true;
+                    break;
+                case "--new":
+                    r.NewPath = args[++i];
+                    break;
+                case "--template":
+                    r.TemplateName = args[++i];
+                    break;
+                case "--force":
+                    r.ForceOverwrite = true;
+                    break;
+                case "--open":
+                    r.OpenPath = args[++i];
                     break;
                 case "--yolo":
                     r.Yolo = true;
@@ -71,6 +94,10 @@ public sealed class CliArgs
           --verify <png>           Headless: paint sample scene, write PNG, exit
           --verify-size WxH        Size hint for verify render (default 1024x640)
           --verify-io              Headless: save/load round-trip test, no GUI
+          --new <path>             Headless: create a .l22proj at <path> and exit
+          --template <name>        Content for --new. empty (default) | desert-island
+          --force                  Allow --new to overwrite an existing file
+          --open <path>            Launch the editor with the .l22proj open
           --yolo                   Auto-approve agent connections (test mode).
                                    Agents use IPC verbs new-scene, screenshot,
                                    list-docs, paint, undo, redo.

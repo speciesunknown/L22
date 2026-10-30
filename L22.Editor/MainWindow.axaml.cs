@@ -56,6 +56,14 @@ public partial class MainWindow : Window
             ViewModel.Documents.Add(seedDoc);
             ViewModel.Active = seedDoc;
         }
+        else if (!string.IsNullOrEmpty(Program.Args.OpenPath))
+        {
+            try { ViewModel.OpenFromFile(Program.Args.OpenPath); }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[--open] failed: {ex.GetType().Name}: {ex.Message}");
+            }
+        }
 
         Tabs.ItemsSource = ViewModel.Documents;
         Tabs.SelectedItem = ViewModel.Active;
