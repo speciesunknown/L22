@@ -23,6 +23,8 @@ public sealed class TerrainGlRenderer
 
     private int _wireProgram;
     private int _uWireView, _uWireProj, _uWireColor;
+    private int _frustumVao, _frustumVbo, _frustumEbo;
+    private bool _frustumInitialized;
 
     private int _cornerProgram;
     private int _uCornerView, _uCornerProj, _uCornerPointSize;
@@ -97,7 +99,8 @@ public sealed class TerrainGlRenderer
                        IReadOnlyCollection<(int cx, int cy)>? selectedCorners = null,
                        float greyLowY = 0f,
                        float greyHighY = 14f,
-                       bool hideUnset = false)
+                       bool hideUnset = false,
+                       Vector3[]? frustumPoints = null)
     {
         // Apply a pending world swap now that we have a live GL context.
         if (_pendingNewWorld is { } nextWorld)
@@ -164,6 +167,9 @@ public sealed class TerrainGlRenderer
             foreach (var gpu in _chunks.Values) gpu.DrawWire(gl);
         }
 
+        if (frustumPoints is { Length: 5 })
+            DrawFrustum(gl, view, proj, frustumPoints);
+
         if (showCornerMarkers)
         {
             // Overlay — never depth-clipped so corners show even when a
@@ -195,6 +201,57 @@ public sealed class TerrainGlRenderer
 
             gl.Enable(GL_DEPTH_TEST);
         }
+    }
+
+    // 8 line segments: apex→each ground corner, then the ground-plane ring.
+    // Vertex order expected: [0]=apex, [1]=TL, [2]=TR, [3]=BR, [4]=BL.
+    private static readonly uint[] FrustumIndices =
+    {
+        0, 1,  0, 2,  0, 3,  0, 4,     // apex spokes
+        1, 2,  2, 3,  3, 4,  4, 1,     // ground ring
+    };
+
+    private unsafe void DrawFrustum(GlInterface gl, Matrix4x4 view, Matrix4x4 proj, Vector3[] pts)
+    {
+        if (!_frustumInitialized)
+        {
+            _frustumVao = gl.GenVertexArray();
+            _frustumVbo = gl.GenBuffer();
+            _frustumEbo = gl.GenBuffer();
+
+            gl.BindVertexArray(_frustumVao);
+            gl.BindBuffer(GL_ARRAY_BUFFER, _frustumVbo);
+            gl.BindBuffer(GL_ELEMENT_ARRAY_BUFFER, _frustumEbo);
+            fixed (uint* ip = FrustumIndices)
+                gl.BufferData(GL_ELEMENT_ARRAY_BUFFER,
+                    (IntPtr)(FrustumIndices.Length * sizeof(uint)),
+                    (IntPtr)ip, GL_STATIC_DRAW);
+            gl.VertexAttribPointer(0, 3, GL_FLOAT, 0, 3 * sizeof(float), IntPtr.Zero);
+            gl.EnableVertexAttribArray(0);
+            _frustumInitialized = true;
+        }
+
+        Span<float> verts = stackalloc float[5 * 3];
+        for (int i = 0; i < 5; i++)
+        {
+            verts[i * 3 + 0] = pts[i].X;
+            verts[i * 3 + 1] = pts[i].Y;
+            verts[i * 3 + 2] = pts[i].Z;
+        }
+        gl.BindVertexArray(_frustumVao);
+        gl.BindBuffer(GL_ARRAY_BUFFER, _frustumVbo);
+        fixed (float* vp = verts)
+            gl.BufferData(GL_ARRAY_BUFFER,
+                (IntPtr)(verts.Length * sizeof(float)),
+                (IntPtr)vp, GlExtras.GL_DYNAMIC_DRAW);
+
+        gl.Disable(GL_DEPTH_TEST);
+        gl.UseProgram(_wireProgram);
+        SetUniformMatrix4(gl, _uWireView, view);
+        SetUniformMatrix4(gl, _uWireProj, proj);
+        _extras.Uniform4f(_uWireColor, 1.0f, 0.93f, 0.33f, 1.0f);
+        gl.DrawElements(GlExtras.GL_LINES, FrustumIndices.Length, GlExtras.GL_UNSIGNED_INT, IntPtr.Zero);
+        gl.Enable(GL_DEPTH_TEST);
     }
 
     private unsafe void UploadSelectionVbo(GlInterface gl, IReadOnlyCollection<(int cx, int cy)> selected)
@@ -261,6 +318,14 @@ public sealed class TerrainGlRenderer
         if (_terrainProgram != 0) gl.DeleteProgram(_terrainProgram);
         if (_wireProgram != 0) gl.DeleteProgram(_wireProgram);
         if (_cornerProgram != 0) gl.DeleteProgram(_cornerProgram);
+        if (_frustumInitialized)
+        {
+            if (_frustumEbo != 0) gl.DeleteBuffer(_frustumEbo);
+            if (_frustumVbo != 0) gl.DeleteBuffer(_frustumVbo);
+            if (_frustumVao != 0) gl.DeleteVertexArray(_frustumVao);
+            _frustumEbo = _frustumVbo = _frustumVao = 0;
+            _frustumInitialized = false;
+        }
         _terrainProgram = 0;
         _wireProgram = 0;
         _cornerProgram = 0;

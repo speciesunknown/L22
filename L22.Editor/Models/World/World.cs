@@ -89,6 +89,10 @@ public sealed class World
 
     public bool HasChunkCornerElevation(int cx, int cy) => _chunkCornerElev.ContainsKey((cx, cy));
 
+    // Corners the user has explicitly pinned a height on. Different from
+    // EnumerateChunkCorners (which lists every corner touched by any chunk).
+    public IEnumerable<(int cx, int cy)> EnumerateSetChunkCorners() => _chunkCornerElev.Keys;
+
     public void SetChunkCornerElevation(int cx, int cy, float value)
     {
         _chunkCornerElev[(cx, cy)] = value;

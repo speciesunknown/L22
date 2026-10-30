@@ -14,6 +14,10 @@ public sealed class CliArgs
     public int VerifyWidth { get; private set; } = 1024;
     public int VerifyHeight { get; private set; } = 640;
 
+    // Headless IO round-trip: build a World, save, reload, cell-by-cell compare.
+    // Prints OK and exits 0, or FAIL + reason and exits 1. No GUI.
+    public bool VerifyIoMode { get; private set; }
+
     // Test mode: any agent connection is auto-approved (no PIN dialog) and
     // the status label flashes a YOLO banner so you don't forget. Intended
     // for driving the editor from an audit agent.
@@ -36,6 +40,9 @@ public sealed class CliArgs
                 case "--verify":
                     r.VerifyMode = true;
                     r.VerifyOutputPath = args[++i];
+                    break;
+                case "--verify-io":
+                    r.VerifyIoMode = true;
                     break;
                 case "--yolo":
                     r.Yolo = true;
@@ -63,6 +70,7 @@ public sealed class CliArgs
           --port <n>               IPC listen port on 127.0.0.1. Default: 47622
           --verify <png>           Headless: paint sample scene, write PNG, exit
           --verify-size WxH        Size hint for verify render (default 1024x640)
+          --verify-io              Headless: save/load round-trip test, no GUI
           --yolo                   Auto-approve agent connections (test mode).
                                    Agents use IPC verbs new-scene, screenshot,
                                    list-docs, paint, undo, redo.

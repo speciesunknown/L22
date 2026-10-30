@@ -24,12 +24,24 @@ public sealed class CommandHistory
     public string? NextUndoName => _undo.TryPeek(out var c) ? c.Name : null;
     public string? NextRedoName => _redo.TryPeek(out var c) ? c.Name : null;
 
+    // "World has unsaved changes relative to the last Save." Flipped true by
+    // any mutation (push/undo/redo); flipped false by MarkSaved().
+    public bool Dirty { get; private set; }
+
+    public void MarkSaved()
+    {
+        if (!Dirty) return;
+        Dirty = false;
+        Changed?.Invoke();
+    }
+
     // Push a command that was already executed in-place (e.g. during a paint stroke).
     public void PushExecuted(IEditorCommand cmd)
     {
         _undo.Push(cmd);
         _redo.Clear();
         TrimToCapacity();
+        Dirty = true;
         Changed?.Invoke();
     }
 
@@ -44,6 +56,7 @@ public sealed class CommandHistory
         if (!_undo.TryPop(out var cmd)) return;
         cmd.Undo(_world);
         _redo.Push(cmd);
+        Dirty = true;
         Changed?.Invoke();
     }
 
@@ -52,6 +65,7 @@ public sealed class CommandHistory
         if (!_redo.TryPop(out var cmd)) return;
         cmd.Execute(_world);
         _undo.Push(cmd);
+        Dirty = true;
         Changed?.Invoke();
     }
 

@@ -15,9 +15,11 @@ public sealed class EditorContext
     public BrushViewModel Brush { get; }
     public ToolManager Tools { get; }
 
-    public EditorContext(string fileId)
+    public EditorContext(string fileId) : this(new World(fileId)) { }
+
+    public EditorContext(World world)
     {
-        World = new World(fileId);
+        World = world;
         History = new CommandHistory(World);
         Brush = new BrushViewModel();
         Tools = new ToolManager(World, History, Brush);

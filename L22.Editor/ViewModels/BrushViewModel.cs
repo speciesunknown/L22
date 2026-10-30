@@ -31,10 +31,13 @@ public sealed class BrushViewModel : INotifyPropertyChanged
     private ToolKind _activeTool = ToolKind.Brush;
     private LayerKind _activeLayer = LayerKind.Elevation;
     private int _radius = 4;
-    private float _strength = 0.6f;
+    // Strength and ElevationValue are in world units (same scale the 3D
+    // view renders in). PaintBrushTool divides by TerrainMeshBuilder.ElevationScale
+    // to get the stored 0..1 normalized value.
+    private float _strength = 0.05f;
     private bool _paintSolid = true;
     private byte _terrainType = (byte)Models.World.TerrainType.Grass;
-    private float _elevationValue = 0.75f;
+    private float _elevationValue = 7f;
     private float _cornerValue = 0.5f;
     private SculptMode _sculptMode = SculptMode.Additive;
 

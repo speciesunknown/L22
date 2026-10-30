@@ -46,7 +46,10 @@ public sealed class PaintBrushTool : ITool
     {
         int r = Math.Max(1, _brush.Radius);
         int r2 = r * r;
-        float strength = Math.Clamp(_brush.Strength, 0f, 1f);
+        // Brush strength is in world units; convert to the stored 0..1
+        // normalized scale that cells and chunk corners live in.
+        float strengthStorage = Math.Clamp(_brush.Strength, 0f, 1f)
+            / Models.Rendering.TerrainMeshBuilder.ElevationScale;
         var mode = _brush.SculptMode;
 
         for (int dy = -r + 1; dy < r; dy++)
@@ -57,18 +60,20 @@ public sealed class PaintBrushTool : ITool
             int x = cx + dx, y = cy + dy;
 
             float t = 1f - MathF.Sqrt(d2) / r;
-            float w = MathF.Pow(t, 1.5f) * strength;
+            float w = MathF.Pow(t, 1.5f) * strengthStorage;
 
             if (_brush.ActiveLayer == LayerKind.TerrainType && _typeCmd is not null)
             {
                 // Terrain-type doesn't support smoothing; alt/shift-alt are
                 // noops. Shift inverts to "erase to Unset" so the game reads
-                // the cell as missing geometry.
+                // the cell as missing geometry. Coverage is driven by raw
+                // falloff `t`, not strength — strength is a world-unit
+                // elevation delta that has no meaning for a categorical cell.
                 byte paintType = mode == SculptMode.Subtractive
                     ? (byte)Models.World.TerrainType.Unset
                     : _brush.TerrainType;
                 if (mode == SculptMode.Smooth || mode == SculptMode.Unsmooth) continue;
-                if (w >= 0.5f || (w > 0f && _brush.PaintSolid))
+                if (t >= 0.5f || (t > 0f && _brush.PaintSolid))
                     _typeCmd.Record(_world, x, y, paintType);
             }
             else if (_brush.ActiveLayer == LayerKind.Elevation && _elevCmd is not null)

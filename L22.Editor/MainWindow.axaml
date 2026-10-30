@@ -15,8 +15,9 @@
                 <MenuItem Header="New _Scene"   Click="OnNewScene"/>
                 <MenuItem Header="New _Prefab"  Click="OnNewPrefab"/>
                 <Separator/>
-                <MenuItem Header="Open S_cene..."   Click="OnOpenScene"/>
-                <MenuItem Header="Open Pre_fab..."  Click="OnOpenPrefab"/>
+                <MenuItem Header="_Open..."              Click="OnOpenFile"/>
+                <MenuItem Header="_Save (Ctrl+S)"        Click="OnSave"/>
+                <MenuItem Header="Save _As... (Ctrl+Shift+S)" Click="OnSaveAs"/>
                 <Separator/>
                 <MenuItem Header="_Close Tab"   Click="OnCloseTab"/>
                 <MenuItem Header="E_xit"        Click="OnExit"/>
@@ -104,26 +105,26 @@
                                 PointerEntered="OnSliderHover" PointerExited="OnSliderExit"/>
                     </Grid>
 
-                    <Grid ColumnDefinitions="52,38,*" ColumnSpacing="4">
+                    <Grid ColumnDefinitions="52,38,*" ColumnSpacing="4" ToolTip.Tip="World units raised/lowered per stamp (at the brush centre)">
                         <TextBlock Grid.Column="0" Text="Strength" Foreground="#AAA" FontSize="11" VerticalAlignment="Center"/>
                         <Grid Grid.Column="1" VerticalAlignment="Center">
-                            <TextBlock Name="LblStrength" Text="0.60" Foreground="#CCC" FontSize="11" HorizontalAlignment="Right"/>
+                            <TextBlock Name="LblStrength" Text="0.05" Foreground="#CCC" FontSize="11" HorizontalAlignment="Right"/>
                             <TextBox Name="TxtStrength" IsVisible="False" FontSize="11" Padding="2" MinHeight="20"
                                      KeyDown="OnSliderEditKey" LostFocus="OnSliderEditLost"/>
                         </Grid>
-                        <Slider Grid.Column="2" Name="SlStrength" Minimum="0" Maximum="1" Value="0.6" ValueChanged="OnStrengthChanged"
+                        <Slider Grid.Column="2" Name="SlStrength" Minimum="0" Maximum="1" Value="0.05" ValueChanged="OnStrengthChanged"
                                 PointerEntered="OnSliderHover" PointerExited="OnSliderExit"/>
                     </Grid>
 
                     <StackPanel Name="PanElevationOptions" Spacing="6" IsVisible="False">
-                        <Grid ColumnDefinitions="52,38,*" ColumnSpacing="4" ToolTip.Tip="Target elevation (0=low, 1=high)">
+                        <Grid ColumnDefinitions="52,38,*" ColumnSpacing="4" ToolTip.Tip="Target elevation in world units">
                             <TextBlock Grid.Column="0" Text="Target" Foreground="#AAA" FontSize="11" VerticalAlignment="Center"/>
                             <Grid Grid.Column="1" VerticalAlignment="Center">
-                                <TextBlock Name="LblElevation" Text="0.75" Foreground="#CCC" FontSize="11" HorizontalAlignment="Right"/>
+                                <TextBlock Name="LblElevation" Text="7.00" Foreground="#CCC" FontSize="11" HorizontalAlignment="Right"/>
                                 <TextBox Name="TxtElevation" IsVisible="False" FontSize="11" Padding="2" MinHeight="20"
                                          KeyDown="OnSliderEditKey" LostFocus="OnSliderEditLost"/>
                             </Grid>
-                            <Slider Grid.Column="2" Name="SlElevation" Minimum="0" Maximum="1" Value="0.75" ValueChanged="OnElevChanged"
+                            <Slider Grid.Column="2" Name="SlElevation" Minimum="0" Maximum="14" Value="7" ValueChanged="OnElevChanged"
                                     PointerEntered="OnSliderHover" PointerExited="OnSliderExit"/>
                         </Grid>
                     </StackPanel>
@@ -170,7 +171,7 @@
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="10">
                             <Button Content="New Scene"  Width="130" Padding="10,8" Click="OnNewScene"/>
                             <Button Content="New Prefab" Width="130" Padding="10,8" Click="OnNewPrefab"/>
-                            <Button Content="Open..."    Width="110" Padding="10,8" Click="OnOpenScene"/>
+                            <Button Content="Open..."    Width="110" Padding="10,8" Click="OnOpenFile"/>
                         </StackPanel>
                         <Separator Margin="0,6"/>
                         <TextBlock Text="Recent scenes" Foreground="#AAA" FontSize="12"/>

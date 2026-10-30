@@ -11,6 +11,7 @@ class Program
     public static int Main(string[] args)
     {
         Args = CliArgs.Parse(args);
+        if (Args.VerifyIoMode) return IoVerify.Run();
         // Seed a document for the sample-mound verify flow. The new-scene
         // verify flow deliberately starts empty so it exercises the actual
         // welcome-screen → New Scene path.

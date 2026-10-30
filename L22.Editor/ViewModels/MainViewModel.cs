@@ -70,9 +70,37 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string FileId => _active?.Context.World.FileId ?? "(no doc)";
     public bool CanUndo => _active?.Context.History.CanUndo ?? false;
     public bool CanRedo => _active?.Context.History.CanRedo ?? false;
+    public bool IsDirty => _active?.Context.History.Dirty ?? false;
 
     public void Undo() => _active?.Context.History.Undo();
     public void Redo() => _active?.Context.History.Redo();
+
+    public OpenDocument OpenFromFile(string path)
+    {
+        var fileId = System.IO.Path.GetFileNameWithoutExtension(path);
+        var result = Models.World.ProjectIO.Load(path, fileId);
+        var ctx = new EditorContext(result.World);
+        // Defensive: a freshly-loaded doc should start clean even if some
+        // future World-build path pushes commands during load.
+        ctx.History.MarkSaved();
+        var doc = new OpenDocument(ctx, result.Kind, fileId)
+        {
+            FilePath = path,
+        };
+        Documents.Add(doc);
+        Active = doc;
+        return doc;
+    }
+
+    public void SaveActive(string path)
+    {
+        if (_active is null) return;
+        Models.World.ProjectIO.Save(_active.Context.World, _active.Kind, path);
+        _active.FilePath = path;
+        _active.Name = System.IO.Path.GetFileNameWithoutExtension(path);
+        _active.Context.History.MarkSaved();
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsDirty)));
+    }
 
     public void SetActiveLayer(LayerKind layer)
     {
@@ -88,6 +116,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     {
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CanUndo)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CanRedo)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsDirty)));
     }
 
     private void RaiseAll()

@@ -11,6 +11,7 @@ public sealed class GlExtras
     public const int GL_UNSIGNED_INT = 0x1405;
     public const int GL_POINTS = 0x0000;
     public const int GL_LINES = 0x0001;
+    public const int GL_DYNAMIC_DRAW = 0x88E8;
 
     [UnmanagedFunctionPointer(CallingConvention.StdCall)]
     private delegate void Uniform3fDel(int loc, float x, float y, float z);

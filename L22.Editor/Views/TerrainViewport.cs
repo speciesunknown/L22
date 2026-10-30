@@ -21,6 +21,16 @@ public class TerrainViewport : OpenGlControlBase
     public ToolManager? Tools { get; set; }
     public bool AllowPainting { get; set; } = false;
 
+    // When set, this viewport's renderer draws the frustum of
+    // FrustumSource.Camera as GL geometry (lines on the ground plane,
+    // apex at the source camera's XZ, no depth testing).
+    public TerrainViewport? FrustumSource { get; set; }
+
+    // When set, every finished render pushes a RequestFrame to the other
+    // viewport so overlays that depend on this one's camera stay in sync
+    // without needing a wall-clock timer.
+    public TerrainViewport? MirrorFramesTo { get; set; }
+
     // Top-down ortho mode: used by the painting viewport. Locks pitch to
     // straight down, swaps camera controls to pan/zoom.
     public bool TopDown { get; set; }
@@ -213,13 +223,16 @@ public class TerrainViewport : OpenGlControlBase
         float greyLow  = Math.Min(0f, lowN)  * scale;
         float greyHigh = Math.Max(1f, highN) * scale;
 
+        var frustumPoints = ComputeFrustumPoints();
+
         _renderer.Render(gl, w, h, Camera.View, Camera.Projection(aspect),
                          _lastBrushCenter, brushRadiusWorld, brushPaintableNow,
                          ShowElevationGreyscale,
                          showCornerMarkers: CornerToolActive && TopDown,
                          selectedCorners: CornerToolActive ? SelectedCorners : null,
                          greyLowY: greyLow, greyHighY: greyHigh,
-                         hideUnset: !TopDown);
+                         hideUnset: !TopDown,
+                         frustumPoints: frustumPoints);
 
         if (CaptureRequested)
         {
@@ -233,6 +246,41 @@ public class TerrainViewport : OpenGlControlBase
             Dispatcher.UIThread.Post(() => CaptureCompleted?.Invoke(),
                 DispatcherPriority.Background);
         }
+
+        // Any dependent viewport (e.g. the top-down showing this cam's
+        // frustum) needs a frame now that this one moved.
+        if (MirrorFramesTo is { } other) other.RequestFrame();
+    }
+
+    // Projects the source viewport's view frustum onto y=0 and returns
+    // [apex, TL, TR, BR, BL] in world coords. Null if there's no source,
+    // or if the source is orthographic (frustum isn't meaningful there).
+    private Vector3[]? ComputeFrustumPoints()
+    {
+        if (FrustumSource is not { } src) return null;
+        var cam = src.Camera;
+        if (cam.IsOrthographic) return null;
+        int sw = Math.Max(1, (int)src.Bounds.Width);
+        int sh = Math.Max(1, (int)src.Bounds.Height);
+        if (sw <= 1 || sh <= 1) return null;
+        float srcAspect = (float)sw / sh;
+
+        Vector3 Hit(float sx, float sy)
+        {
+            var (origin, dir) = cam.ScreenRay(sx, sy, srcAspect);
+            float t;
+            if (dir.Y < -1e-4f && origin.Y > 0f) t = -origin.Y / dir.Y;
+            else t = cam.FarPlane * 0.5f;  // ray climbs — cap so we still show direction
+            return origin + dir * t;
+        }
+
+        var pts = new Vector3[5];
+        pts[0] = cam.Position;
+        pts[1] = Hit(-1f,  1f);
+        pts[2] = Hit( 1f,  1f);
+        pts[3] = Hit( 1f, -1f);
+        pts[4] = Hit(-1f, -1f);
+        return pts;
     }
 
     public void RequestFrame()

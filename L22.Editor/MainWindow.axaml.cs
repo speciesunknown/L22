@@ -1,11 +1,14 @@
 using System;
 using System.Collections.Generic;
+using System.Numerics;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
+using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 using Avalonia.VisualTree;
 using L22.Editor.Models;
 using L22.Editor.Models.Commands;
@@ -105,6 +108,16 @@ public partial class MainWindow : Window
             FreeViewport.ClearHeldKeys();
             _currentHoveredViewport = null;
         };
+
+        // The top-down viewport renders the 3D camera's frustum as GL
+        // geometry on the ground plane. We tell it which camera to project
+        // and ask the 3D viewport to kick a frame on its sibling after each
+        // of its own renders so the frustum tracks movement.
+        EditViewport.FrustumSource = FreeViewport;
+        FreeViewport.MirrorFramesTo = EditViewport;
+
+        ViewModel.PropertyChanged += (_, _) => UpdateWindowTitle();
+        UpdateWindowTitle();
     }
 
     private void BuildToolCursors()
@@ -222,8 +235,128 @@ public partial class MainWindow : Window
     private void OnNewScene(object? s, RoutedEventArgs e)   => CreateAndSelect(DocumentKind.Scene);
     private void OnNewPrefab(object? s, RoutedEventArgs e)  => CreateAndSelect(DocumentKind.Prefab);
 
-    private async void OnOpenScene(object? s, RoutedEventArgs e)  => await ShowOpenPlaceholder("Scene");
-    private async void OnOpenPrefab(object? s, RoutedEventArgs e) => await ShowOpenPlaceholder("Prefab");
+    private async void OnOpenFile(object? s, RoutedEventArgs e)
+    {
+        var sp = StorageProvider;
+        if (sp is null) return;
+        var picked = await sp.OpenFilePickerAsync(new Avalonia.Platform.Storage.FilePickerOpenOptions
+        {
+            Title = "Open L22 project",
+            AllowMultiple = false,
+            FileTypeFilter = new[] { L22ProjFileType, AllFilesFileType },
+        });
+        if (picked is null || picked.Count == 0) return;
+        var path = picked[0].TryGetLocalPath();
+        if (string.IsNullOrEmpty(path)) return;
+
+        if (ViewModel.Active is { } prev) SnapshotCamerasInto(prev);
+        try
+        {
+            var doc = ViewModel.OpenFromFile(path);
+            Tabs.SelectedItem = doc;
+            BindViewportsToActive();
+            RestoreCamerasFrom(doc);
+            RefreshSceneGraph();
+            RefreshBrushBindings();
+            UpdateLayerUi();
+            LblFileId.Text = $"File ID: {doc.Context.World.FileId}";
+            UpdateWindowTitle();
+            EditViewport.RequestFrame();
+            FreeViewport.RequestFrame();
+        }
+        catch (Exception ex)
+        {
+            await ShowErrorDialog("Open failed", ex.Message);
+        }
+    }
+
+    private async void OnSave(object? s, RoutedEventArgs e)
+    {
+        if (ViewModel.Active is not { } doc) return;
+        if (string.IsNullOrEmpty(doc.FilePath))
+        {
+            await SaveAs(doc);
+            return;
+        }
+        try
+        {
+            ViewModel.SaveActive(doc.FilePath!);
+            UpdateWindowTitle();
+        }
+        catch (Exception ex)
+        {
+            await ShowErrorDialog("Save failed", ex.Message);
+        }
+    }
+
+    private async void OnSaveAs(object? s, RoutedEventArgs e)
+    {
+        if (ViewModel.Active is { } doc) await SaveAs(doc);
+    }
+
+    private async Task SaveAs(OpenDocument doc)
+    {
+        var sp = StorageProvider;
+        if (sp is null) return;
+        var picked = await sp.SaveFilePickerAsync(new Avalonia.Platform.Storage.FilePickerSaveOptions
+        {
+            Title = "Save L22 project",
+            SuggestedFileName = doc.Name,
+            DefaultExtension = "l22proj",
+            FileTypeChoices = new[] { L22ProjFileType },
+        });
+        var path = picked?.TryGetLocalPath();
+        if (string.IsNullOrEmpty(path)) return;
+        try
+        {
+            ViewModel.SaveActive(path!);
+            UpdateWindowTitle();
+            Tabs.SelectedItem = doc;  // refresh the tab label (name may have changed)
+        }
+        catch (Exception ex)
+        {
+            await ShowErrorDialog("Save failed", ex.Message);
+        }
+    }
+
+    private static readonly Avalonia.Platform.Storage.FilePickerFileType L22ProjFileType =
+        new("L22 project") { Patterns = new[] { "*.l22proj" } };
+    private static readonly Avalonia.Platform.Storage.FilePickerFileType AllFilesFileType =
+        new("All files") { Patterns = new[] { "*" } };
+
+    private async Task ShowErrorDialog(string title, string message)
+    {
+        var dlg = new Window
+        {
+            Title = title,
+            Width = 420,
+            Height = 160,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            CanResize = false,
+            Content = new StackPanel
+            {
+                Margin = new Thickness(16),
+                Spacing = 12,
+                Children =
+                {
+                    new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap },
+                    new Button { Content = "OK", HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right },
+                },
+            },
+        };
+        if (dlg.Content is StackPanel sp && sp.Children[^1] is Button b)
+            b.Click += (_, _) => dlg.Close();
+        await dlg.ShowDialog(this);
+    }
+
+    private void UpdateWindowTitle()
+    {
+        var doc = ViewModel.Active;
+        if (doc is null) { Title = "L22 World Editor"; return; }
+        string star = doc.Context.History.Dirty ? "*" : "";
+        string name = doc.Name;
+        Title = $"L22 World Editor — {star}{name}";
+    }
 
     private void OnCloseTab(object? s, RoutedEventArgs e)
     {
@@ -284,34 +417,6 @@ public partial class MainWindow : Window
         foreach (var d in ViewModel.Documents)
             if (d.Name == name) return true;
         return false;
-    }
-
-    private async Task ShowOpenPlaceholder(string kind)
-    {
-        var dlg = new Window
-        {
-            Title = $"Open {kind}",
-            Width = 360, Height = 140,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            CanResize = false,
-            Content = new StackPanel
-            {
-                Margin = new Thickness(16),
-                Spacing = 12,
-                Children =
-                {
-                    new TextBlock
-                    {
-                        Text = $"File-based open for {kind.ToLowerInvariant()}s lands in plan 002 (project persistence). For now use File → New {kind}.",
-                        TextWrapping = TextWrapping.Wrap,
-                    },
-                    new Button { Content = "OK", HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right },
-                },
-            },
-        };
-        if (dlg.Content is StackPanel sp && sp.Children[^1] is Button b)
-            b.Click += (_, _) => dlg.Close();
-        await dlg.ShowDialog(this);
     }
 
     // ---- right panel bindings ------------------------------------------------------
@@ -429,6 +534,14 @@ public partial class MainWindow : Window
         {
             if (e.Key == Key.Z) { ViewModel.Undo(); EditViewport.RequestFrame(); FreeViewport.RequestFrame(); e.Handled = true; return; }
             if (e.Key == Key.Y) { ViewModel.Redo(); EditViewport.RequestFrame(); FreeViewport.RequestFrame(); e.Handled = true; return; }
+            if (e.Key == Key.S)
+            {
+                if (e.KeyModifiers.HasFlag(KeyModifiers.Shift)) OnSaveAs(this, e);
+                else OnSave(this, e);
+                e.Handled = true;
+                return;
+            }
+            if (e.Key == Key.O) { OnOpenFile(this, e); e.Handled = true; return; }
         }
         var target = EditViewport.CameraFree ? EditViewport
                    : FreeViewport.CameraFree ? FreeViewport
