@@ -544,36 +544,159 @@ public partial class MainWindow : Window
 
     private string PrefabForNewObject() => _selectedPrefabId ?? "none";
 
+    // Row-index in the (sorted + filtered) ListBox → real ObjectInstance.
+    // Rebuilt every RefreshObjectList call; selection handlers use it.
+    private readonly List<L22.Editor.Models.Objects.ObjectInstance> _displayedObjects = new();
+
     private void RefreshObjectList()
     {
         if (ObjectList is null) return;
         var ctx = ViewModel.Active?.Context;
+        _displayedObjects.Clear();
         if (ctx is null)
         {
             ObjectList.ItemsSource = null;
             if (LblObjectCount is not null) LblObjectCount.Text = "0 objects";
             return;
         }
-        var labels = new List<string>(ctx.Objects.Count);
+
+        string filter = (TxtObjectSearch?.Text ?? "").Trim().ToLowerInvariant();
+
+        var ranked = new List<(string display, string code, L22.Editor.Models.Objects.ObjectInstance inst)>(ctx.Objects.Count);
         foreach (var o in ctx.Objects)
-            labels.Add($"{o.Id}  ·  {o.PrefabId}  ·  ({o.CellX}, {o.CellY})");
+        {
+            var prefab = ctx.Prefabs.Find(o.PrefabId);
+            string display = !string.IsNullOrEmpty(o.NameOverride) ? o.NameOverride!
+                : !string.IsNullOrEmpty(prefab?.DisplayName) ? prefab!.DisplayName
+                : "(unnamed)";
+            string code = !string.IsNullOrEmpty(o.CodeName) ? o.CodeName!
+                : !string.IsNullOrEmpty(prefab?.ForeignIdentifier) ? prefab!.ForeignIdentifier
+                : "";
+            if (filter.Length > 0)
+            {
+                bool hit = display.ToLowerInvariant().Contains(filter)
+                        || code.ToLowerInvariant().Contains(filter)
+                        || o.Id.ToLowerInvariant().Contains(filter);
+                if (!hit) continue;
+            }
+            ranked.Add((display, code, o));
+        }
+        ranked.Sort((a, b) =>
+        {
+            int d = string.Compare(a.display, b.display, System.StringComparison.OrdinalIgnoreCase);
+            if (d != 0) return d;
+            return string.Compare(a.code, b.code, System.StringComparison.OrdinalIgnoreCase);
+        });
+
+        var labels = new List<string>(ranked.Count);
+        foreach (var r in ranked)
+        {
+            _displayedObjects.Add(r.inst);
+            string code = string.IsNullOrEmpty(r.code) ? "" : $"  ·  {r.code}";
+            labels.Add($"{r.display}{code}  ·  ({r.inst.CellX}, {r.inst.CellY})");
+        }
         ObjectList.ItemsSource = labels;
         if (LblObjectCount is not null)
-            LblObjectCount.Text = $"{ctx.Objects.Count} object" + (ctx.Objects.Count == 1 ? "" : "s");
+            LblObjectCount.Text = ranked.Count == ctx.Objects.Count
+                ? $"{ctx.Objects.Count} object" + (ctx.Objects.Count == 1 ? "" : "s")
+                : $"{ranked.Count} / {ctx.Objects.Count}";
+    }
+
+    private void OnObjectSearchChanged(object? sender, TextChangedEventArgs e) => RefreshObjectList();
+
+    private L22.Editor.Models.Objects.ObjectInstance? SelectedObjectInstance()
+    {
+        int idx = ObjectList?.SelectedIndex ?? -1;
+        if (idx < 0 || idx >= _displayedObjects.Count) return null;
+        return _displayedObjects[idx];
+    }
+
+    private async void OnObjectListDoubleTapped(object? sender, Avalonia.Input.TappedEventArgs e) => await OpenObjectEditor();
+    private async void OnEditObjectClick(object? sender, RoutedEventArgs e) => await OpenObjectEditor();
+
+    private async System.Threading.Tasks.Task OpenObjectEditor()
+    {
+        var ctx = ViewModel.Active?.Context;
+        var inst = SelectedObjectInstance();
+        if (ctx is null || inst is null) return;
+
+        var payload = new L22.Editor.Views.ObjectEditorPayload
+        {
+            Title = $"Edit object  ·  {inst.Id}",
+            SubjectLabel = $"Object  ·  cell ({inst.CellX}, {inst.CellY})  ·  prefab {inst.PrefabId}",
+            CodeNameLabel = "Code name:",
+            DisplayName = inst.NameOverride ?? "",
+            CodeName = inst.CodeName ?? "",
+            Properties = L22.Editor.Models.Objects.PropertyNode.DeepClone(inst.PropertyOverrides),
+        };
+        bool ok = await L22.Editor.Views.ObjectEditorDialog.ShowAsync(this, payload);
+        if (!ok) return;
+
+        var cmd = new L22.Editor.Models.Commands.EditInstanceCommand(
+            ctx, inst,
+            newName: string.IsNullOrEmpty(payload.DisplayName) ? null : payload.DisplayName,
+            newCode: string.IsNullOrEmpty(payload.CodeName) ? null : payload.CodeName,
+            newProps: payload.Properties);
+        ctx.History.ExecuteAndPush(cmd);
+    }
+
+    private async void OnEditPrefabsClick(object? sender, RoutedEventArgs e)
+    {
+        var ctx = ViewModel.Active?.Context;
+        if (ctx is null) return;
+
+        L22.Editor.Models.Objects.ObjectPrefab? target = null;
+        if (_selectedPrefabId is { } sid) target = ctx.Prefabs.Find(sid);
+
+        bool created = false;
+        if (target is null)
+        {
+            if (ctx.Prefabs.LibraryDir is null)
+            {
+                LblPrefabLibDir.Text = "Library: (save the scene first)";
+                return;
+            }
+            target = new L22.Editor.Models.Objects.ObjectPrefab
+            {
+                Id = Guid.NewGuid().ToString("N"),
+                DisplayName = "Untitled prefab",
+            };
+            created = true;
+        }
+
+        var payload = new L22.Editor.Views.ObjectEditorPayload
+        {
+            Title = $"Edit prefab  ·  {target.Id}",
+            SubjectLabel = $"Prefab  ·  id {target.Id}",
+            CodeNameLabel = "Foreign id:",
+            DisplayName = target.DisplayName ?? "",
+            CodeName = target.ForeignIdentifier ?? "",
+            Properties = L22.Editor.Models.Objects.PropertyNode.DeepClone(target.Properties),
+        };
+        bool ok = await L22.Editor.Views.ObjectEditorDialog.ShowAsync(this, payload);
+        if (!ok)
+        {
+            // Nothing to roll back for an existing prefab; a just-created
+            // one never hit the library so there's also nothing to clean.
+            return;
+        }
+        target.DisplayName = payload.DisplayName;
+        target.ForeignIdentifier = payload.CodeName;
+        target.Properties = payload.Properties;
+        ctx.Prefabs.Upsert(target);
+        if (created) _selectedPrefabId = target.Id;
     }
 
     private void OnObjectListSelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
-        var ctx = ViewModel.Active?.Context;
-        if (ctx is null || ObjectList is null || PropertyTree is null) return;
-        int idx = ObjectList.SelectedIndex;
-        if (idx < 0 || idx >= ctx.Objects.Count)
+        if (PropertyTree is null) return;
+        var inst = SelectedObjectInstance();
+        if (inst is null)
         {
             PropertyTree.ItemsSource = null;
             PanPropertyEditor.IsVisible = false;
             return;
         }
-        var inst = ctx.Objects[idx];
         PropertyTree.ItemsSource = inst.PropertyOverrides;
         PanPropertyEditor.IsVisible = false;
 
@@ -667,9 +790,8 @@ public partial class MainWindow : Window
     private void OnDeleteObjectClick(object? sender, RoutedEventArgs e)
     {
         var ctx = ViewModel.Active?.Context;
-        if (ctx is null || ObjectList is null || ObjectList.SelectedIndex < 0) return;
-        if (ObjectList.SelectedIndex >= ctx.Objects.Count) return;
-        var inst = ctx.Objects[ObjectList.SelectedIndex];
+        var inst = SelectedObjectInstance();
+        if (ctx is null || inst is null) return;
         var cmd = new L22.Editor.Models.Commands.DeleteObjectCommand(ctx, inst);
         ctx.History.ExecuteAndPush(cmd);
     }

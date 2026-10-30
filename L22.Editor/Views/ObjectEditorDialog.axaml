@@ -1,0 +1,62 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:objects="using:L22.Editor.Models.Objects"
+        x:Class="L22.Editor.Views.ObjectEditorDialog"
+        Title="Edit"
+        Width="580" Height="640"
+        WindowStartupLocation="CenterOwner"
+        CanResize="True">
+    <DockPanel>
+        <Border DockPanel.Dock="Top" Background="#15181D" Padding="12">
+            <StackPanel Spacing="6">
+                <TextBlock Name="LblSubject" Text="Object" Foreground="#DDD" FontSize="14" FontWeight="SemiBold"/>
+                <Grid ColumnDefinitions="110,*" ColumnSpacing="8">
+                    <TextBlock Text="Display name:" Foreground="#AAA" FontSize="11" VerticalAlignment="Center"/>
+                    <TextBox Name="TxtDisplayName" Grid.Column="1"/>
+                </Grid>
+                <Grid ColumnDefinitions="110,*" ColumnSpacing="8">
+                    <TextBlock Name="LblCodeName" Text="Code name:" Foreground="#AAA" FontSize="11" VerticalAlignment="Center"/>
+                    <TextBox Name="TxtCodeName" Grid.Column="1"/>
+                </Grid>
+            </StackPanel>
+        </Border>
+
+        <Border DockPanel.Dock="Bottom" Background="#13161B" Padding="12">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <Button Content="+ Text"   Click="OnAddText"   ToolTip.Tip="Add a text leaf to the selected group (or to the root)"/>
+                    <Button Content="+ Number" Click="OnAddNumber" ToolTip.Tip="Add a numeric leaf"/>
+                    <Button Content="+ Group"  Click="OnAddGroup"  ToolTip.Tip="Add a nested named-properties group"/>
+                    <Button Content="+ Array"  Click="OnAddArray"  ToolTip.Tip="Add an array of properties"/>
+                    <Button Content="Remove"   Click="OnRemove"    ToolTip.Tip="Remove the selected node"/>
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                    <Button Content="Cancel" Click="OnCancel" IsCancel="True"/>
+                    <Button Content="OK" Click="OnOk" IsDefault="True" MinWidth="90"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <TextBlock DockPanel.Dock="Top" Text="Properties" Foreground="#AAA" FontSize="11" Margin="12,10,12,4"/>
+        <Border Margin="12,0,12,8" BorderBrush="#2A2E36" BorderThickness="1" Background="#1C1F26">
+            <ScrollViewer>
+                <TreeView Name="PropTree" Background="Transparent" BorderThickness="0">
+                    <TreeView.ItemTemplate>
+                        <TreeDataTemplate DataType="objects:PropertyNode" ItemsSource="{Binding Children}">
+                            <StackPanel Orientation="Horizontal" Spacing="6" Margin="2,1">
+                                <Border Background="#2B303A" CornerRadius="2" Padding="4,2" MinWidth="60">
+                                    <TextBlock Text="{Binding Kind}" FontSize="10" Foreground="#CCC"
+                                               VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                                </Border>
+                                <TextBox Text="{Binding Name, Mode=TwoWay}" Width="140" FontSize="11"
+                                         Watermark="name"/>
+                                <TextBox Text="{Binding ValueDisplay, Mode=TwoWay}" Width="220" FontSize="11"
+                                         Watermark="value"/>
+                            </StackPanel>
+                        </TreeDataTemplate>
+                    </TreeView.ItemTemplate>
+                </TreeView>
+            </ScrollViewer>
+        </Border>
+    </DockPanel>
+</Window>

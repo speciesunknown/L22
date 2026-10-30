@@ -38,4 +38,49 @@ public sealed class PropertyNode
         PropertyKind.Properties => $"{Name}  {{{Children?.Count ?? 0}}}",
         _ => Name,
     };
+
+    // Two-way bound in the object editor dialog: reads TextValue or
+    // NumberValue depending on Kind; silently coerces strings to doubles
+    // for number nodes (bad input leaves the previous number intact).
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string ValueDisplay
+    {
+        get => Kind switch
+        {
+            PropertyKind.Text   => TextValue ?? "",
+            PropertyKind.Number => NumberValue?.ToString() ?? "",
+            _ => "",
+        };
+        set
+        {
+            if (Kind == PropertyKind.Text) TextValue = value;
+            else if (Kind == PropertyKind.Number
+                     && double.TryParse(value, System.Globalization.CultureInfo.InvariantCulture, out var d))
+                NumberValue = d;
+        }
+    }
+
+    public PropertyNode DeepClone()
+    {
+        var copy = new PropertyNode
+        {
+            Name = Name,
+            Kind = Kind,
+            TextValue = TextValue,
+            NumberValue = NumberValue,
+        };
+        if (Children is { Count: > 0 })
+        {
+            copy.Children = new List<PropertyNode>(Children.Count);
+            foreach (var c in Children) copy.Children.Add(c.DeepClone());
+        }
+        return copy;
+    }
+
+    public static List<PropertyNode> DeepClone(List<PropertyNode> src)
+    {
+        var copy = new List<PropertyNode>(src.Count);
+        foreach (var c in src) copy.Add(c.DeepClone());
+        return copy;
+    }
 }

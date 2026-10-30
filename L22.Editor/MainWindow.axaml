@@ -67,6 +67,13 @@
                         <TextBlock Text="Object" HorizontalAlignment="Center" FontSize="10"/>
                     </StackPanel>
                 </Button>
+                <Button Name="BtnEditPrefabs" Click="OnEditPrefabsClick" HorizontalAlignment="Stretch" Padding="4,6"
+                        ToolTip.Tip="Open the selected prefab's editor (or create one if the library is empty)">
+                    <StackPanel>
+                        <TextBlock Text="⚙" HorizontalAlignment="Center" FontSize="20" Foreground="#CCE0FF"/>
+                        <TextBlock Text="Prefab" HorizontalAlignment="Center" FontSize="10"/>
+                    </StackPanel>
+                </Button>
                 <Separator Margin="0,8"/>
                 <TextBlock Text="Layer" Foreground="#AAA" FontSize="11" HorizontalAlignment="Center"/>
                 <Button Name="BtnLayerElev" Click="OnSelectLayerElev" HorizontalAlignment="Stretch" Padding="4,6">
@@ -160,9 +167,12 @@
                     <Separator Margin="0,8"/>
                     <TextBlock Text="Objects" Foreground="#DDD" FontSize="14" FontWeight="SemiBold"/>
                     <TextBlock Name="LblObjectCount" Text="0 objects" Foreground="#AAA" FontSize="11"/>
+                    <TextBox Name="TxtObjectSearch" Watermark="search name or code…" FontSize="11"
+                             TextChanged="OnObjectSearchChanged"/>
                     <Border Background="#1C1F26" CornerRadius="4" Padding="2" MinHeight="120">
                         <ListBox Name="ObjectList" Background="Transparent" BorderThickness="0"
-                                 SelectionChanged="OnObjectListSelectionChanged">
+                                 SelectionChanged="OnObjectListSelectionChanged"
+                                 DoubleTapped="OnObjectListDoubleTapped">
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
                                     <TextBlock Text="{Binding}" Foreground="#DDD" FontSize="11" Padding="4,2"/>
@@ -172,9 +182,10 @@
                     </Border>
                     <StackPanel Orientation="Horizontal" Spacing="4">
                         <Button Content="+ Add"    Click="OnAddObjectClick" HorizontalAlignment="Stretch"/>
+                        <Button Content="Edit…"    Click="OnEditObjectClick" HorizontalAlignment="Stretch"/>
                         <Button Content="Delete"   Click="OnDeleteObjectClick" HorizontalAlignment="Stretch"/>
                     </StackPanel>
-                    <TextBlock Text="Add drops at (64,64) · Delete removes the selected row." Foreground="#777" FontSize="10" TextWrapping="Wrap"/>
+                    <TextBlock Text="Double-click a row to edit · Add drops at (64,64) · Delete removes the selected row." Foreground="#777" FontSize="10" TextWrapping="Wrap"/>
 
                     <TextBlock Text="Properties (selected object)" Foreground="#BBB" FontSize="11" Margin="0,6,0,0"/>
                     <Border Background="#1C1F26" CornerRadius="4" Padding="2" MinHeight="80">

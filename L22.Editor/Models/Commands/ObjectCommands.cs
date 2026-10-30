@@ -74,6 +74,49 @@ public sealed class EditPropertyCommand : IEditorCommand
     }
 }
 
+// Bulk edit of an ObjectInstance's user-visible fields: NameOverride,
+// CodeName, and the PropertyOverrides tree. The dialog does the mutation
+// locally; this command just records before/after for undo.
+public sealed class EditInstanceCommand : IEditorCommand
+{
+    private readonly EditorContext _ctx;
+    private readonly ObjectInstance _instance;
+    private readonly string? _beforeName, _afterName;
+    private readonly string? _beforeCode, _afterCode;
+    private readonly List<PropertyNode> _beforeProps, _afterProps;
+
+    public string Name => $"Edit object {_instance.Id}";
+
+    public EditInstanceCommand(EditorContext ctx, ObjectInstance instance,
+                               string? newName, string? newCode, List<PropertyNode> newProps)
+    {
+        _ctx = ctx;
+        _instance = instance;
+        _beforeName = instance.NameOverride;
+        _afterName = newName;
+        _beforeCode = instance.CodeName;
+        _afterCode = newCode;
+        _beforeProps = PropertyNode.DeepClone(instance.PropertyOverrides);
+        _afterProps = newProps;
+    }
+
+    public void Execute(World.World world)
+    {
+        _instance.NameOverride = _afterName;
+        _instance.CodeName = _afterCode;
+        _instance.PropertyOverrides = _afterProps;
+        _ctx.RaiseObjectsChanged();
+    }
+
+    public void Undo(World.World world)
+    {
+        _instance.NameOverride = _beforeName;
+        _instance.CodeName = _beforeCode;
+        _instance.PropertyOverrides = PropertyNode.DeepClone(_beforeProps);
+        _ctx.RaiseObjectsChanged();
+    }
+}
+
 public sealed class DeleteObjectCommand : IEditorCommand
 {
     private readonly EditorContext _ctx;

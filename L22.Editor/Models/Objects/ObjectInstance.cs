@@ -19,6 +19,10 @@ public sealed class ObjectInstance
     public float YOffsetWorld { get; set; }
 
     public string? NameOverride { get; set; }
+    // Short human-ish identifier the game references the object by.
+    // Different from Id (a per-scene GUID). Null → the game can fall back
+    // to the prefab's ForeignIdentifier.
+    public string? CodeName { get; set; }
     public IconRef? IconOverride { get; set; }
 
     // Only paths the user actually edited appear here. Each child's `Name`
