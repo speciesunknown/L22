@@ -1,0 +1,276 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:views="using:L22.Editor.Views"
+        xmlns:models="using:L22.Editor.Models"
+        xmlns:shapes="using:Avalonia.Controls.Shapes"
+        mc:Ignorable="d" d:DesignWidth="1280" d:DesignHeight="760"
+        x:Class="L22.Editor.MainWindow"
+        Title="L22 World Editor"
+        Width="1280" Height="760">
+    <DockPanel>
+        <Menu DockPanel.Dock="Top">
+            <MenuItem Header="_File">
+                <MenuItem Header="New _Scene"   Click="OnNewScene"/>
+                <MenuItem Header="New _Prefab"  Click="OnNewPrefab"/>
+                <Separator/>
+                <MenuItem Header="Open S_cene..."   Click="OnOpenScene"/>
+                <MenuItem Header="Open Pre_fab..."  Click="OnOpenPrefab"/>
+                <Separator/>
+                <MenuItem Header="_Close Tab"   Click="OnCloseTab"/>
+                <MenuItem Header="E_xit"        Click="OnExit"/>
+            </MenuItem>
+            <MenuItem Header="_Edit">
+                <MenuItem Header="_Undo (Ctrl+Z)" Click="OnUndo"/>
+                <MenuItem Header="_Redo (Ctrl+Y)" Click="OnRedo"/>
+            </MenuItem>
+            <MenuItem Header="_View">
+                <MenuItem Header="Reset Cameras" Click="OnResetCameras"/>
+            </MenuItem>
+        </Menu>
+
+        <!-- Left toolbar -->
+        <Border DockPanel.Dock="Left" Width="100" Background="#1C1F26" Padding="6">
+            <StackPanel Orientation="Vertical" Spacing="6">
+                <TextBlock Text="Tool" Foreground="#AAA" FontSize="11" HorizontalAlignment="Center"/>
+                <Button Name="BtnToolBrush" Click="OnSelectToolBrush" HorizontalAlignment="Stretch" Padding="4,6">
+                    <StackPanel>
+                        <Viewbox Width="24" Height="24" HorizontalAlignment="Center">
+                            <Path Data="{StaticResource IconBrush}" Fill="#DDD"/>
+                        </Viewbox>
+                        <TextBlock Text="Brush" HorizontalAlignment="Center" FontSize="10"/>
+                    </StackPanel>
+                </Button>
+                <Button Name="BtnToolCorners" Click="OnSelectToolCorners" HorizontalAlignment="Stretch" Padding="4,6">
+                    <StackPanel>
+                        <Viewbox Width="24" Height="24" HorizontalAlignment="Center">
+                            <Path Data="{StaticResource IconCorners}" Fill="#DDD"/>
+                        </Viewbox>
+                        <TextBlock Text="Corners" HorizontalAlignment="Center" FontSize="10"/>
+                    </StackPanel>
+                </Button>
+                <Button Name="BtnToolDropper" Click="OnSelectToolDropper" HorizontalAlignment="Stretch" Padding="4,6">
+                    <StackPanel>
+                        <Viewbox Width="24" Height="24" HorizontalAlignment="Center">
+                            <Path Data="{StaticResource IconDropper}" Fill="#DDD"/>
+                        </Viewbox>
+                        <TextBlock Text="Dropper" HorizontalAlignment="Center" FontSize="10"/>
+                    </StackPanel>
+                </Button>
+                <Separator Margin="0,8"/>
+                <TextBlock Text="Layer" Foreground="#AAA" FontSize="11" HorizontalAlignment="Center"/>
+                <Button Name="BtnLayerElev" Click="OnSelectLayerElev" HorizontalAlignment="Stretch" Padding="4,6">
+                    <StackPanel>
+                        <Viewbox Width="22" Height="22" HorizontalAlignment="Center">
+                            <Path Data="{StaticResource IconElev}" Fill="#DDD"/>
+                        </Viewbox>
+                        <TextBlock Text="Elev" HorizontalAlignment="Center" FontSize="10"/>
+                    </StackPanel>
+                </Button>
+                <Button Name="BtnLayerType" Click="OnSelectLayerType" HorizontalAlignment="Stretch" Padding="4,6">
+                    <StackPanel>
+                        <Viewbox Width="22" Height="22" HorizontalAlignment="Center">
+                            <Path Data="{StaticResource IconType}" Fill="#DDD"/>
+                        </Viewbox>
+                        <TextBlock Text="Type" HorizontalAlignment="Center" FontSize="10"/>
+                    </StackPanel>
+                </Button>
+            </StackPanel>
+        </Border>
+
+        <!-- Right options panel -->
+        <Border DockPanel.Dock="Right" Width="240" Background="#1C1F26" Padding="10">
+            <ScrollViewer>
+                <StackPanel Spacing="10">
+                    <TextBlock Text="Scene" Foreground="#DDD" FontSize="14" FontWeight="SemiBold"/>
+                    <TreeView Name="SceneGraph" MaxHeight="160" Background="#13161B" BorderThickness="0"/>
+                    <TextBlock Name="SceneHint" Text="Prefab instancing lands in plan 003."
+                               Foreground="#777" FontSize="10" TextWrapping="Wrap"/>
+
+                    <Separator Margin="0,6"/>
+                    <TextBlock Text="Brush options" Foreground="#DDD" FontSize="14" FontWeight="SemiBold"/>
+
+                    <TextBlock Name="LblActiveLayer" Text="Layer: Elevation" Foreground="#CCC" FontSize="12"/>
+
+                    <Grid ColumnDefinitions="52,38,*" ColumnSpacing="4">
+                        <TextBlock Grid.Column="0" Text="Radius" Foreground="#AAA" FontSize="11" VerticalAlignment="Center"/>
+                        <Grid Grid.Column="1" VerticalAlignment="Center">
+                            <TextBlock Name="LblRadius" Text="4" Foreground="#CCC" FontSize="11" HorizontalAlignment="Right"/>
+                            <TextBox Name="TxtRadius" IsVisible="False" FontSize="11" Padding="2" MinHeight="20"
+                                     KeyDown="OnSliderEditKey" LostFocus="OnSliderEditLost"/>
+                        </Grid>
+                        <Slider Grid.Column="2" Name="SlRadius" Minimum="1" Maximum="32" Value="4" ValueChanged="OnRadiusChanged"
+                                PointerEntered="OnSliderHover" PointerExited="OnSliderExit"/>
+                    </Grid>
+
+                    <Grid ColumnDefinitions="52,38,*" ColumnSpacing="4">
+                        <TextBlock Grid.Column="0" Text="Strength" Foreground="#AAA" FontSize="11" VerticalAlignment="Center"/>
+                        <Grid Grid.Column="1" VerticalAlignment="Center">
+                            <TextBlock Name="LblStrength" Text="0.60" Foreground="#CCC" FontSize="11" HorizontalAlignment="Right"/>
+                            <TextBox Name="TxtStrength" IsVisible="False" FontSize="11" Padding="2" MinHeight="20"
+                                     KeyDown="OnSliderEditKey" LostFocus="OnSliderEditLost"/>
+                        </Grid>
+                        <Slider Grid.Column="2" Name="SlStrength" Minimum="0" Maximum="1" Value="0.6" ValueChanged="OnStrengthChanged"
+                                PointerEntered="OnSliderHover" PointerExited="OnSliderExit"/>
+                    </Grid>
+
+                    <StackPanel Name="PanElevationOptions" Spacing="6" IsVisible="False">
+                        <Grid ColumnDefinitions="52,38,*" ColumnSpacing="4" ToolTip.Tip="Target elevation (0=low, 1=high)">
+                            <TextBlock Grid.Column="0" Text="Target" Foreground="#AAA" FontSize="11" VerticalAlignment="Center"/>
+                            <Grid Grid.Column="1" VerticalAlignment="Center">
+                                <TextBlock Name="LblElevation" Text="0.75" Foreground="#CCC" FontSize="11" HorizontalAlignment="Right"/>
+                                <TextBox Name="TxtElevation" IsVisible="False" FontSize="11" Padding="2" MinHeight="20"
+                                         KeyDown="OnSliderEditKey" LostFocus="OnSliderEditLost"/>
+                            </Grid>
+                            <Slider Grid.Column="2" Name="SlElevation" Minimum="0" Maximum="1" Value="0.75" ValueChanged="OnElevChanged"
+                                    PointerEntered="OnSliderHover" PointerExited="OnSliderExit"/>
+                        </Grid>
+                    </StackPanel>
+
+                    <StackPanel Name="PanCornerOptions" Spacing="6" IsVisible="False">
+                        <TextBlock Text="Chunk corner elevation" Foreground="#AAA" FontSize="11"/>
+                        <TextBlock Name="LblCornerSelCount" Text="0 corners selected" Foreground="#CCC" FontSize="11"/>
+                        <TextBlock Text="Value (adds on top of painted terrain)" Foreground="#AAA" FontSize="11" TextWrapping="Wrap"/>
+                        <TextBox Name="TxtCornerValue" Text="0.5" FontSize="12"/>
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <Button Content="Override" Click="OnCornerOverride" HorizontalAlignment="Stretch"/>
+                            <Button Content="Add"      Click="OnCornerAdd"      HorizontalAlignment="Stretch"/>
+                        </StackPanel>
+                        <TextBlock Text="Drag to add · Shift+drag to toggle · Click empty space to clear · Changes keep selection."
+                                   Foreground="#777" FontSize="10" TextWrapping="Wrap"/>
+                    </StackPanel>
+
+                    <StackPanel Name="PanTerrainTypeOptions" Spacing="6" IsVisible="False">
+                        <TextBlock Text="Terrain type" Foreground="#AAA" FontSize="11"/>
+                        <Button Name="BtnTypeSand"  Content="Sand (yellow)" Click="OnPickSand"  HorizontalAlignment="Stretch"/>
+                        <Button Name="BtnTypeGrass" Content="Grass (green)" Click="OnPickGrass" HorizontalAlignment="Stretch"/>
+                        <Button Name="BtnTypeRock"  Content="Rock (grey)"   Click="OnPickRock"  HorizontalAlignment="Stretch"/>
+                    </StackPanel>
+
+                    <Separator Margin="0,8"/>
+                    <TextBlock Text="Agent server" Foreground="#DDD" FontSize="14" FontWeight="SemiBold"/>
+                    <TextBlock Name="LblServerStatus" Text="Server: starting..." Foreground="#CCC" FontSize="12"/>
+                    <TextBlock Name="LblFileId"       Text="File ID: ..." Foreground="#CCC" FontSize="11" TextWrapping="Wrap"/>
+                </StackPanel>
+            </ScrollViewer>
+        </Border>
+
+        <!-- Center: either welcome screen or tabs+viewports -->
+        <Grid>
+            <!-- Welcome (shown when no document is open) -->
+            <Border Name="WelcomePanel" Background="#13161B" IsVisible="False">
+                <Grid RowDefinitions="*,Auto,*" ColumnDefinitions="*,420,*">
+                    <StackPanel Grid.Row="1" Grid.Column="1" Spacing="18">
+                        <TextBlock Text="L22 World Editor" FontSize="26" FontWeight="SemiBold"
+                                   Foreground="#EEE" HorizontalAlignment="Center"/>
+                        <TextBlock Text="Nothing is open yet. Start a new scene or open an existing one."
+                                   Foreground="#AAA" FontSize="13"
+                                   HorizontalAlignment="Center" TextWrapping="Wrap"/>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="10">
+                            <Button Content="New Scene"  Width="130" Padding="10,8" Click="OnNewScene"/>
+                            <Button Content="New Prefab" Width="130" Padding="10,8" Click="OnNewPrefab"/>
+                            <Button Content="Open..."    Width="110" Padding="10,8" Click="OnOpenScene"/>
+                        </StackPanel>
+                        <Separator Margin="0,6"/>
+                        <TextBlock Text="Recent scenes" Foreground="#AAA" FontSize="12"/>
+                        <Border Background="#1C1F26" CornerRadius="4" Padding="2" MinHeight="120">
+                            <ListBox Name="RecentList" Background="Transparent" BorderThickness="0"
+                                     DoubleTapped="OnRecentActivated">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate DataType="models:RecentEntry">
+                                        <StackPanel Margin="6,4">
+                                            <TextBlock Text="{Binding Display}"  Foreground="#DDD" FontSize="13"/>
+                                            <TextBlock Text="{Binding Subtitle}" Foreground="#777" FontSize="10"/>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </Border>
+                        <TextBlock Name="LblNoRecent"
+                                   Text="(none yet — persistence lands in plan 002)"
+                                   Foreground="#666" FontSize="10"
+                                   HorizontalAlignment="Center"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- Editor area (shown when a document is open) -->
+            <DockPanel Name="EditorArea" IsVisible="False">
+                <TabControl DockPanel.Dock="Top" Name="Tabs"
+                            Background="#13161B" Padding="0"
+                            SelectionChanged="OnTabSelectionChanged"
+                            MaxHeight="36">
+                    <TabControl.ItemTemplate>
+                        <DataTemplate DataType="models:OpenDocument">
+                            <TextBlock Text="{Binding TabLabel}" Padding="4,2"/>
+                        </DataTemplate>
+                    </TabControl.ItemTemplate>
+                </TabControl>
+                <Grid ColumnDefinitions="*,4,*">
+            <Border Grid.Column="0" BorderBrush="#444" BorderThickness="0,0,1,0" Background="#101216">
+                <Grid Name="EditViewportHost" Background="Transparent">
+                    <views:TerrainViewport Name="EditViewport"/>
+                    <Canvas IsHitTestVisible="False">
+                        <shapes:Rectangle Name="RubberBand" IsVisible="False"
+                                          Stroke="#FFFF66AA" StrokeThickness="1"
+                                          Fill="#33FF66AA"/>
+                        <!-- Pointer-following tool overlays. Composited above the
+                             GL control by Avalonia — no depth-buffer concern. -->
+                        <Viewbox Name="DropperOverlay" Width="28" Height="28" IsVisible="False">
+                            <Path Data="{StaticResource IconDropper}" Fill="White" Stroke="Black" StrokeThickness="0.6"/>
+                        </Viewbox>
+                        <Viewbox Name="BoxSelectOverlay" Width="26" Height="26" IsVisible="False">
+                            <Path Data="{StaticResource IconBoxSelect}" Fill="White" Stroke="Black" StrokeThickness="0.6"/>
+                        </Viewbox>
+                        <Viewbox Name="BrushOverlay" Width="28" Height="28" IsVisible="False">
+                            <Path Name="BrushOverlayPath" Data="{StaticResource IconBrushAdd}" Fill="White" Stroke="Black" StrokeThickness="0.6"/>
+                        </Viewbox>
+                    </Canvas>
+                    <TextBlock Text="Top-down · paint here (WASD pan · R/F zoom · right-drag pan)"
+                               Foreground="#99FFFFFF"
+                               Margin="8" VerticalAlignment="Top" HorizontalAlignment="Left"
+                               FontSize="12" IsHitTestVisible="False"/>
+                    <Border Name="EditCamToggle"
+                            Width="40" Height="40" CornerRadius="20"
+                            Background="#80000000" BorderBrush="#80FFFFFF" BorderThickness="1"
+                            Margin="0,0,14,14"
+                            HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                            ToolTip.Tip="Hold to drive camera (mouse + WASD / R / F)"
+                            PointerPressed="OnEditCamPressed"
+                            PointerReleased="OnEditCamReleased"
+                            PointerCaptureLost="OnEditCamReleased">
+                        <TextBlock Name="EditCamIcon" Text="◎" Foreground="White" FontSize="22"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   IsHitTestVisible="False"/>
+                    </Border>
+                </Grid>
+            </Border>
+            <GridSplitter Grid.Column="1" Background="#333" ResizeDirection="Columns"/>
+            <Border Grid.Column="2" Background="#101216">
+                <Grid Name="FreeViewportHost" Background="Transparent">
+                    <views:TerrainViewport Name="FreeViewport"/>
+                    <TextBlock Text="3D preview (WASD · R/F · right-drag rotate)"
+                               Foreground="#99FFFFFF"
+                               Margin="8" VerticalAlignment="Top" HorizontalAlignment="Left"
+                               FontSize="12" IsHitTestVisible="False"/>
+                    <Border Name="FreeCamToggle"
+                            Width="40" Height="40" CornerRadius="20"
+                            Background="#80000000" BorderBrush="#80FFFFFF" BorderThickness="1"
+                            Margin="0,0,14,14"
+                            HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                            ToolTip.Tip="Hold to drive camera (mouse + WASD / R / F)"
+                            PointerPressed="OnFreeCamPressed"
+                            PointerReleased="OnFreeCamReleased"
+                            PointerCaptureLost="OnFreeCamReleased">
+                        <TextBlock Name="FreeCamIcon" Text="◎" Foreground="White" FontSize="22"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   IsHitTestVisible="False"/>
+                    </Border>
+                </Grid>
+            </Border>
+                </Grid>
+            </DockPanel>
+        </Grid>
+    </DockPanel>
+</Window>

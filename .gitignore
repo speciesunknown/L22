@@ -1,0 +1,21 @@
+# Build output
+[Bb]in/
+[Oo]bj/
+*.user
+*.suo
+*.userprefs
+
+# IDE caches
+.vs/
+.vscode/
+.idea/
+
+# OS cruft
+Thumbs.db
+.DS_Store
+
+# Local scratch space
+Temp/
+
+# Claude Code local-only settings (user-specific permissions, not shared)
+.claude/settings.local.json

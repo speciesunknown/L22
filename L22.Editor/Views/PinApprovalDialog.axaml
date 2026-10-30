@@ -1,0 +1,29 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="L22.Editor.Views.PinApprovalDialog"
+        Title="Agent connection"
+        Width="440" Height="280"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner">
+    <Border Padding="20" Background="#1C1F26">
+        <StackPanel Spacing="12">
+            <TextBlock Text="Agent requesting connection" FontSize="16" FontWeight="SemiBold" Foreground="#EEE"/>
+            <StackPanel Spacing="4">
+                <TextBlock Name="LblFile"  Foreground="#CCC" FontSize="12"/>
+                <TextBlock Name="LblAgent" Foreground="#CCC" FontSize="12" TextWrapping="Wrap"/>
+                <TextBlock Text="Tell the agent this PIN:" Foreground="#AAA" FontSize="11" Margin="0,8,0,0"/>
+                <Border Background="#2A2E38" Padding="12" CornerRadius="4">
+                    <TextBlock Name="LblPin" FontSize="28" FontWeight="Bold" Foreground="#FFD866"
+                               HorizontalAlignment="Center" LetterSpacing="4"/>
+                </Border>
+            </StackPanel>
+            <TextBlock Text="How long should this agent be allowed to send commands?"
+                       Foreground="#AAA" FontSize="11" TextWrapping="Wrap"/>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+                <Button Content="Block"        Click="OnBlock"/>
+                <Button Content="Allow 1 hour"   Click="OnAllowOne"/>
+                <Button Content="Allow 24 hours" Click="OnAllowDay"/>
+            </StackPanel>
+        </StackPanel>
+    </Border>
+</Window>
