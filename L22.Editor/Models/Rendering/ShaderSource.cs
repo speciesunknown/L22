@@ -156,4 +156,41 @@ void main() {
     oColor = vec4(uColor.rgb * shade, uColor.a);
 }
 ";
+
+    // Icon billboard. The quad orientation is derived from the inverse of
+    // uView's rotation so the sprite stays facing the camera as it moves
+    // (classic 'spherical' billboard — reads correctly in both ortho and
+    // perspective). uUvRect lets a single texture act as a sprite sheet:
+    // (u0, v0) = top-left of chosen cell, (u1, v1) = bottom-right.
+    public const string BillboardVertex = @"#version 300 es
+precision highp float;
+layout(location = 0) in vec2 aLocal;
+layout(location = 1) in vec2 aUV;
+uniform mat4 uView;
+uniform mat4 uProj;
+uniform vec3 uCenter;
+uniform vec2 uSize;
+uniform vec4 uUvRect;
+out vec2 vUV;
+void main() {
+    // Camera right/up live in the first two columns of uView's rotation.
+    vec3 camRight = vec3(uView[0][0], uView[1][0], uView[2][0]);
+    vec3 camUp    = vec3(uView[0][1], uView[1][1], uView[2][1]);
+    vec3 world = uCenter + camRight * aLocal.x * uSize.x + camUp * aLocal.y * uSize.y;
+    gl_Position = uProj * uView * vec4(world, 1.0);
+    vUV = mix(uUvRect.xy, uUvRect.zw, aUV);
+}
+";
+
+    public const string BillboardFragment = @"#version 300 es
+precision highp float;
+in vec2 vUV;
+uniform sampler2D uTex;
+out vec4 oColor;
+void main() {
+    vec4 c = texture(uTex, vUV);
+    if (c.a < 0.02) discard;
+    oColor = c;
+}
+";
 }

@@ -242,7 +242,7 @@ public class TerrainViewport : OpenGlControlBase
         float greyHigh = Math.Max(1f, highN) * scale;
 
         var frustumPoints = ComputeFrustumPoints();
-        var objectCubes = ComputeObjectCubeCenters();
+        var gpuObjects = ComputeGpuObjects();
 
         _renderer.Render(gl, w, h, Camera.View, Camera.Projection(aspect),
                          _lastBrushCenter, brushRadiusWorld, brushPaintableNow,
@@ -252,7 +252,7 @@ public class TerrainViewport : OpenGlControlBase
                          greyLowY: greyLow, greyHighY: greyHigh,
                          hideUnset: !TopDown,
                          frustumPoints: frustumPoints,
-                         objectCubes: objectCubes);
+                         objects: gpuObjects);
 
         if (CaptureRequested)
         {
@@ -272,22 +272,42 @@ public class TerrainViewport : OpenGlControlBase
         if (MirrorFramesTo is { } other) other.RequestFrame();
     }
 
-    // Pink-cube fallback positions for Phase 2a. Icon-textured billboards
-    // come in Phase 2b. Y is terrain-surface + YOffsetWorld + half the
-    // cube's edge so its bottom sits on the ground. CubeHalfEdge must stay
-    // in sync with uSize in TerrainGlRenderer.DrawObjectCubes.
-    private const float CubeHalfEdge = 1.0f;  // uSize=2.0 → half-edge 1
-    private Vector3[]? ComputeObjectCubeCenters()
+    // Project folder for the loaded scene; icon paths in IconRef.ImagePath
+    // are resolved relative to this. MainWindow sets it alongside BindContext.
+    public string? ProjectFolderPath { get; set; }
+
+    // Centre a Phase 2a cube 1 world unit above the surface — matches the
+    // 2.0 uSize uniform in TerrainGlRenderer.DrawObjects.
+    private const float CubeHalfEdge = 1.0f;
+
+    private GpuObjectInstance[]? ComputeGpuObjects()
     {
         if (Objects is null || Objects.Count == 0 || World is null) return null;
-        var pts = new Vector3[Objects.Count];
+        var arr = new GpuObjectInstance[Objects.Count];
         for (int i = 0; i < Objects.Count; i++)
         {
             var o = Objects[i];
             float sy = TerrainMeshBuilder.SampleSurfaceY(World, o.CellX, o.CellY);
-            pts[i] = new Vector3(o.CellX + 0.5f, sy + o.YOffsetWorld + CubeHalfEdge, o.CellY + 0.5f);
+            var pos = new Vector3(o.CellX + 0.5f, sy + o.YOffsetWorld + CubeHalfEdge, o.CellY + 0.5f);
+
+            var icon = o.IconOverride;  // Phase 5 will fall back to prefab.Icon
+            if (icon is null || string.IsNullOrEmpty(icon.ImagePath))
+            {
+                arr[i] = new GpuObjectInstance(pos, null, Vector4.Zero);
+                continue;
+            }
+            var path = icon.ImagePath;
+            if (!System.IO.Path.IsPathRooted(path) && !string.IsNullOrEmpty(ProjectFolderPath))
+                path = System.IO.Path.Combine(ProjectFolderPath, path);
+            int cols = System.Math.Max(1, icon.GridCols);
+            int rows = System.Math.Max(1, icon.GridRows);
+            float u0 = (float)icon.CellCol / cols;
+            float v0 = (float)icon.CellRow / rows;
+            float u1 = (float)(icon.CellCol + 1) / cols;
+            float v1 = (float)(icon.CellRow + 1) / rows;
+            arr[i] = new GpuObjectInstance(pos, path, new Vector4(u0, v0, u1, v1));
         }
-        return pts;
+        return arr;
     }
 
     // Projects the source viewport's view frustum onto y=0 and returns

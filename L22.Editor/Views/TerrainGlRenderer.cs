@@ -39,6 +39,15 @@ public sealed class TerrainGlRenderer
     private int _cubeVao, _cubeVbo, _cubeEbo;
     private bool _cubeInitialized;
 
+    private int _billboardProgram;
+    private int _uBbView, _uBbProj, _uBbCenter, _uBbSize, _uBbUvRect, _uBbTex;
+    private int _billboardVao, _billboardVbo;
+    private bool _billboardInitialized;
+    // Icon path → GL texture name. 0 means we tried and failed to load
+    // (missing file, bad PNG). Negative-cached so we don't thrash the disk
+    // every frame on broken IconRef.ImagePath values.
+    private readonly Dictionary<string, int> _iconTextures = new();
+
     private readonly Dictionary<ChunkCoord, GpuChunk> _chunks = new();
     private readonly HashSet<ChunkCoord> _knownDirty = new();
     private readonly GlExtras _extras = new();
@@ -85,6 +94,14 @@ public sealed class TerrainGlRenderer
         _uCubeSize = gl.GetUniformLocationString(_cubeProgram, "uSize");
         _uCubeColor = gl.GetUniformLocationString(_cubeProgram, "uColor");
 
+        _billboardProgram = CompileLink(gl, ShaderSource.BillboardVertex, ShaderSource.BillboardFragment);
+        _uBbView = gl.GetUniformLocationString(_billboardProgram, "uView");
+        _uBbProj = gl.GetUniformLocationString(_billboardProgram, "uProj");
+        _uBbCenter = gl.GetUniformLocationString(_billboardProgram, "uCenter");
+        _uBbSize = gl.GetUniformLocationString(_billboardProgram, "uSize");
+        _uBbUvRect = gl.GetUniformLocationString(_billboardProgram, "uUvRect");
+        _uBbTex = gl.GetUniformLocationString(_billboardProgram, "uTex");
+
         _cornerProgram = CompileLink(gl, ShaderSource.CornerPointVertex, ShaderSource.CornerPointFragment);
         _uCornerView = gl.GetUniformLocationString(_cornerProgram, "uView");
         _uCornerProj = gl.GetUniformLocationString(_cornerProgram, "uProj");
@@ -113,7 +130,7 @@ public sealed class TerrainGlRenderer
                        float greyHighY = 14f,
                        bool hideUnset = false,
                        Vector3[]? frustumPoints = null,
-                       Vector3[]? objectCubes = null)
+                       GpuObjectInstance[]? objects = null)
     {
         // Apply a pending world swap now that we have a live GL context.
         if (_pendingNewWorld is { } nextWorld)
@@ -183,8 +200,8 @@ public sealed class TerrainGlRenderer
         if (frustumPoints is { Length: 5 })
             DrawFrustum(gl, view, proj, frustumPoints);
 
-        if (objectCubes is { Length: > 0 })
-            DrawObjectCubes(gl, view, proj, objectCubes, keepDepthTest: hideUnset);
+        if (objects is { Length: > 0 })
+            DrawObjects(gl, view, proj, objects, keepDepthTest: hideUnset);
 
         if (showCornerMarkers)
         {
@@ -236,43 +253,148 @@ public sealed class TerrainGlRenderer
         3,7,6, 3,6,2,   // top
     };
 
-    private unsafe void DrawObjectCubes(GlInterface gl, Matrix4x4 view, Matrix4x4 proj,
-                                        Vector3[] centers, bool keepDepthTest)
+    // Unit quad centered on origin — used for the billboard pass. Position
+    // in local XY ([-0.5..0.5]), UV in [0..1].
+    private static readonly float[] BillboardVerts =
     {
-        if (!_cubeInitialized)
-        {
-            _cubeVao = gl.GenVertexArray();
-            _cubeVbo = gl.GenBuffer();
-            _cubeEbo = gl.GenBuffer();
-            gl.BindVertexArray(_cubeVao);
-            gl.BindBuffer(GL_ARRAY_BUFFER, _cubeVbo);
-            fixed (float* vp = CubeVerts)
-                gl.BufferData(GL_ARRAY_BUFFER,
-                    (IntPtr)(CubeVerts.Length * sizeof(float)),
-                    (IntPtr)vp, GL_STATIC_DRAW);
-            gl.BindBuffer(GL_ELEMENT_ARRAY_BUFFER, _cubeEbo);
-            fixed (uint* ip = CubeIndices)
-                gl.BufferData(GL_ELEMENT_ARRAY_BUFFER,
-                    (IntPtr)(CubeIndices.Length * sizeof(uint)),
-                    (IntPtr)ip, GL_STATIC_DRAW);
-            gl.VertexAttribPointer(0, 3, GL_FLOAT, 0, 3 * sizeof(float), IntPtr.Zero);
-            gl.EnableVertexAttribArray(0);
-            _cubeInitialized = true;
-        }
+        -0.5f, -0.5f,   0f, 1f,
+         0.5f, -0.5f,   1f, 1f,
+         0.5f,  0.5f,   1f, 0f,
+        -0.5f, -0.5f,   0f, 1f,
+         0.5f,  0.5f,   1f, 0f,
+        -0.5f,  0.5f,   0f, 0f,
+    };
+
+    private unsafe void DrawObjects(GlInterface gl, Matrix4x4 view, Matrix4x4 proj,
+                                     GpuObjectInstance[] all, bool keepDepthTest)
+    {
+        EnsureCubeInitialized(gl);
+        EnsureBillboardInitialized(gl);
 
         if (!keepDepthTest) gl.Disable(GL_DEPTH_TEST);
-        gl.UseProgram(_cubeProgram);
-        SetUniformMatrix4(gl, _uCubeView, view);
-        SetUniformMatrix4(gl, _uCubeProj, proj);
-        _extras.Uniform4f(_uCubeColor, 1.0f, 0.42f, 0.78f, 1.0f);  // pink
-        gl.Uniform1f(_uCubeSize, 2.0f);
-        gl.BindVertexArray(_cubeVao);
-        foreach (var c in centers)
+
+        // Billboards first — alpha-blended, so draw them over cubes (same
+        // overlay layer anyway, order mostly matters for correctness of the
+        // discard-based alpha fallback).
+        bool anyBillboard = false;
+        foreach (var o in all)
         {
-            _extras.Uniform3f(_uCubeCenter, c.X, c.Y, c.Z);
+            if (o.IconPath is null) continue;
+            int tex = GetOrLoadIcon(gl, o.IconPath);
+            if (tex == 0) continue;  // negative-cached; render as cube below
+
+            if (!anyBillboard)
+            {
+                gl.UseProgram(_billboardProgram);
+                SetUniformMatrix4(gl, _uBbView, view);
+                SetUniformMatrix4(gl, _uBbProj, proj);
+                gl.Uniform1i(_uBbTex, 0);  // sampler reads from unit 0
+                _extras.ActiveTexture(GlExtras.GL_TEXTURE0);
+                gl.Enable(GlExtras.GL_BLEND);
+                _extras.BlendFunc(GlExtras.GL_SRC_ALPHA, GlExtras.GL_ONE_MINUS_SRC_ALPHA);
+                gl.BindVertexArray(_billboardVao);
+                anyBillboard = true;
+            }
+
+            gl.BindTexture(GlExtras.GL_TEXTURE_2D, tex);
+            _extras.Uniform3f(_uBbCenter, o.Position.X, o.Position.Y, o.Position.Z);
+            _extras.Uniform2f(_uBbSize, 2.5f, 2.5f);
+            _extras.Uniform4f(_uBbUvRect,
+                o.IconUvRect.X, o.IconUvRect.Y, o.IconUvRect.Z, o.IconUvRect.W);
+            gl.DrawArrays(GL_TRIANGLES, 0, 6);
+        }
+        if (anyBillboard) gl.Disable(GlExtras.GL_BLEND);
+
+        // Cubes for the fallback / failed-icon case.
+        bool anyCube = false;
+        foreach (var o in all)
+        {
+            bool needCube = o.IconPath is null
+                            || GetOrLoadIcon(gl, o.IconPath) == 0;
+            if (!needCube) continue;
+
+            if (!anyCube)
+            {
+                gl.UseProgram(_cubeProgram);
+                SetUniformMatrix4(gl, _uCubeView, view);
+                SetUniformMatrix4(gl, _uCubeProj, proj);
+                _extras.Uniform4f(_uCubeColor, 1.0f, 0.42f, 0.78f, 1.0f);
+                gl.Uniform1f(_uCubeSize, 2.0f);
+                gl.BindVertexArray(_cubeVao);
+                anyCube = true;
+            }
+            _extras.Uniform3f(_uCubeCenter, o.Position.X, o.Position.Y, o.Position.Z);
             gl.DrawElements(GL_TRIANGLES, CubeIndices.Length, GlExtras.GL_UNSIGNED_INT, IntPtr.Zero);
         }
+
         if (!keepDepthTest) gl.Enable(GL_DEPTH_TEST);
+    }
+
+    private unsafe void EnsureCubeInitialized(GlInterface gl)
+    {
+        if (_cubeInitialized) return;
+        _cubeVao = gl.GenVertexArray();
+        _cubeVbo = gl.GenBuffer();
+        _cubeEbo = gl.GenBuffer();
+        gl.BindVertexArray(_cubeVao);
+        gl.BindBuffer(GL_ARRAY_BUFFER, _cubeVbo);
+        fixed (float* vp = CubeVerts)
+            gl.BufferData(GL_ARRAY_BUFFER,
+                (IntPtr)(CubeVerts.Length * sizeof(float)),
+                (IntPtr)vp, GL_STATIC_DRAW);
+        gl.BindBuffer(GL_ELEMENT_ARRAY_BUFFER, _cubeEbo);
+        fixed (uint* ip = CubeIndices)
+            gl.BufferData(GL_ELEMENT_ARRAY_BUFFER,
+                (IntPtr)(CubeIndices.Length * sizeof(uint)),
+                (IntPtr)ip, GL_STATIC_DRAW);
+        gl.VertexAttribPointer(0, 3, GL_FLOAT, 0, 3 * sizeof(float), IntPtr.Zero);
+        gl.EnableVertexAttribArray(0);
+        _cubeInitialized = true;
+    }
+
+    private unsafe void EnsureBillboardInitialized(GlInterface gl)
+    {
+        if (_billboardInitialized) return;
+        _billboardVao = gl.GenVertexArray();
+        _billboardVbo = gl.GenBuffer();
+        gl.BindVertexArray(_billboardVao);
+        gl.BindBuffer(GL_ARRAY_BUFFER, _billboardVbo);
+        fixed (float* vp = BillboardVerts)
+            gl.BufferData(GL_ARRAY_BUFFER,
+                (IntPtr)(BillboardVerts.Length * sizeof(float)),
+                (IntPtr)vp, GL_STATIC_DRAW);
+        int stride = 4 * sizeof(float);
+        gl.VertexAttribPointer(0, 2, GL_FLOAT, 0, stride, IntPtr.Zero);
+        gl.EnableVertexAttribArray(0);
+        gl.VertexAttribPointer(1, 2, GL_FLOAT, 0, stride, (IntPtr)(2 * sizeof(float)));
+        gl.EnableVertexAttribArray(1);
+        _billboardInitialized = true;
+    }
+
+    private unsafe int GetOrLoadIcon(GlInterface gl, string path)
+    {
+        if (_iconTextures.TryGetValue(path, out var cached)) return cached;
+        int tex;
+        try
+        {
+            var (rgba, w, h) = PngReader.ReadRgba(path);
+            tex = _extras.GenTexture(gl);
+            gl.BindTexture(GlExtras.GL_TEXTURE_2D, tex);
+            fixed (byte* p = rgba)
+                _extras.TexImage2D(GlExtras.GL_TEXTURE_2D, 0, GlExtras.GL_RGBA, w, h, 0,
+                    GlExtras.GL_RGBA, GL_UNSIGNED_BYTE, (IntPtr)p);
+            _extras.TexParameteri(GlExtras.GL_TEXTURE_2D, GlExtras.GL_TEXTURE_MIN_FILTER, GlExtras.GL_NEAREST);
+            _extras.TexParameteri(GlExtras.GL_TEXTURE_2D, GlExtras.GL_TEXTURE_MAG_FILTER, GlExtras.GL_NEAREST);
+            _extras.TexParameteri(GlExtras.GL_TEXTURE_2D, GlExtras.GL_TEXTURE_WRAP_S, GlExtras.GL_CLAMP_TO_EDGE);
+            _extras.TexParameteri(GlExtras.GL_TEXTURE_2D, GlExtras.GL_TEXTURE_WRAP_T, GlExtras.GL_CLAMP_TO_EDGE);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[icon] failed to load '{path}': {ex.Message}");
+            tex = 0;
+        }
+        _iconTextures[path] = tex;
+        return tex;
     }
 
     // 8 line segments: apex→each ground corner, then the ground-plane ring.

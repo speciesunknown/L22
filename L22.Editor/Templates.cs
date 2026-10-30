@@ -11,6 +11,46 @@ namespace L22.Editor;
 // starting scene.
 internal static class Templates
 {
+    // Filename of a 2×2-grid 64×64 RGBA PNG written next to objects.json so
+    // seeded markers can show distinct icons. Program.RunNew writes it
+    // after the project is saved.
+    public const string SampleIconFileName = "sample-icons.png";
+
+    public static byte[] BuildSampleIconsRgba(out int width, out int height)
+    {
+        width = 64; height = 64;
+        var rgba = new byte[width * height * 4];
+        // 2×2 cells, each 32×32: yellow / green / blue / red with a dark edge.
+        var cells = new (byte r, byte g, byte b)[]
+        {
+            (255, 220,  60),  // (0,0) yellow
+            ( 60, 200,  90),  // (1,0) green
+            ( 80, 160, 240),  // (0,1) blue
+            (240,  90,  90),  // (1,1) red
+        };
+        for (int y = 0; y < height; y++)
+        for (int x = 0; x < width; x++)
+        {
+            int cx = x / 32;
+            int cy = y / 32;
+            int lx = x % 32;
+            int ly = y % 32;
+            bool border = lx == 0 || ly == 0 || lx == 31 || ly == 31;
+            var c = cells[cy * 2 + cx];
+            int idx = (y * width + x) * 4;
+            if (border)
+            {
+                rgba[idx + 0] = 30; rgba[idx + 1] = 30; rgba[idx + 2] = 30;
+            }
+            else
+            {
+                rgba[idx + 0] = c.r; rgba[idx + 1] = c.g; rgba[idx + 2] = c.b;
+            }
+            rgba[idx + 3] = 255;
+        }
+        return rgba;
+    }
+
     // Fills every cell of an 8×8-chunk world with grass at sea level —
     // the same output `File → New Scene` produces inside the UI.
     public static void FillEmpty(World world) => FillEmpty(world, out _);
@@ -75,6 +115,7 @@ internal static class Templates
             new ObjectInstance
             {
                 Id = "peak-marker", PrefabId = "none", CellX = 64, CellY = 64,
+                IconOverride = new IconRef { ImagePath = SampleIconFileName, GridCols = 2, GridRows = 2, CellCol = 0, CellRow = 0 },
                 PropertyOverrides =
                 {
                     new PropertyNode { Name = "label", Kind = PropertyKind.Text, TextValue = "Island peak" },
@@ -84,6 +125,7 @@ internal static class Templates
             new ObjectInstance
             {
                 Id = "beach-marker", PrefabId = "none", CellX = 80, CellY = 50,
+                IconOverride = new IconRef { ImagePath = SampleIconFileName, GridCols = 2, GridRows = 2, CellCol = 1, CellRow = 0 },
                 PropertyOverrides =
                 {
                     new PropertyNode { Name = "label", Kind = PropertyKind.Text, TextValue = "North beach" },
@@ -103,6 +145,7 @@ internal static class Templates
             new ObjectInstance
             {
                 Id = "water-marker", PrefabId = "none", CellX = 40, CellY = 90,
+                IconOverride = new IconRef { ImagePath = SampleIconFileName, GridCols = 2, GridRows = 2, CellCol = 0, CellRow = 1 },
                 PropertyOverrides =
                 {
                     new PropertyNode { Name = "label", Kind = PropertyKind.Text, TextValue = "Shipwreck" },

@@ -219,6 +219,8 @@ public partial class MainWindow : Window
         if (active is null) return;
         EditViewport.BindContext(active.Context);
         FreeViewport.BindContext(active.Context, allowTools: false);
+        EditViewport.ProjectFolderPath = active.FilePath;
+        FreeViewport.ProjectFolderPath = active.FilePath;
     }
 
     private void OnTabSelectionChanged(object? s, SelectionChangedEventArgs e)

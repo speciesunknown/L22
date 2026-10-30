@@ -35,9 +35,13 @@ WHEN I click
 THEN I add the selected tile from the right menu
 AND its neighbours (north, east, south, west relative to the tile) show up as pink tile-sized cubes
 
-## Editing cities
+## Editing tiles
+
+WHEN I click an existing tile in a city
+THEN that tile is selected
+AND it's unset neighbours are represented by pink outlines
 
 GIVEN I have an unset neighbour selected
 WHEN I click one of the allowed options on the right
 THEN a tile of that type is selected
-AND the new tile becomes the active selection
+AND the tile becomes the active selection

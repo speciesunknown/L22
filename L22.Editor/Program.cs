@@ -59,6 +59,13 @@ class Program
             }
 
             Models.World.ProjectIO.Save(world, Models.DocumentKind.Scene, path, objects);
+
+            // Emit the sample icon PNG next to objects.json so the seeded
+            // markers have something to render as billboards.
+            var iconRgba = Templates.BuildSampleIconsRgba(out int iw, out int ih);
+            PngWriter.WriteRgba(System.IO.Path.Combine(path, Templates.SampleIconFileName),
+                iconRgba, iw, ih, flipY: false);
+
             Console.Out.WriteLine(System.IO.Path.GetFullPath(path));
             return 0;
         }
