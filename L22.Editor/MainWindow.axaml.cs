@@ -456,6 +456,65 @@ public partial class MainWindow : Window
             IsExpanded = true,
         };
         SceneGraph.ItemsSource = new[] { root };
+        BindObjectsPanel(active.Context);
+    }
+
+    private EditorContext? _objectsBoundContext;
+    private void BindObjectsPanel(EditorContext ctx)
+    {
+        if (_objectsBoundContext is not null) _objectsBoundContext.ObjectsChanged -= RefreshObjectList;
+        _objectsBoundContext = ctx;
+        ctx.ObjectsChanged += RefreshObjectList;
+        RefreshObjectList();
+    }
+
+    private void RefreshObjectList()
+    {
+        if (ObjectList is null) return;
+        var ctx = ViewModel.Active?.Context;
+        if (ctx is null)
+        {
+            ObjectList.ItemsSource = null;
+            if (LblObjectCount is not null) LblObjectCount.Text = "0 objects";
+            return;
+        }
+        var labels = new List<string>(ctx.Objects.Count);
+        foreach (var o in ctx.Objects)
+            labels.Add($"{o.Id}  ·  {o.PrefabId}  ·  ({o.CellX}, {o.CellY})");
+        ObjectList.ItemsSource = labels;
+        if (LblObjectCount is not null)
+            LblObjectCount.Text = $"{ctx.Objects.Count} object" + (ctx.Objects.Count == 1 ? "" : "s");
+    }
+
+    private void OnObjectListSelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        // Phase 3a: nothing to do yet. Phase 3b: focus the viewport cam on
+        // the selected object.
+    }
+
+    private void OnAddObjectClick(object? sender, RoutedEventArgs e)
+    {
+        var ctx = ViewModel.Active?.Context;
+        if (ctx is null) return;
+        var inst = new L22.Editor.Models.Objects.ObjectInstance
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            PrefabId = "none",
+            CellX = 64,
+            CellY = 64,
+        };
+        var cmd = new L22.Editor.Models.Commands.AddObjectCommand(ctx, inst);
+        ctx.History.ExecuteAndPush(cmd);
+    }
+
+    private void OnDeleteObjectClick(object? sender, RoutedEventArgs e)
+    {
+        var ctx = ViewModel.Active?.Context;
+        if (ctx is null || ObjectList is null || ObjectList.SelectedIndex < 0) return;
+        if (ObjectList.SelectedIndex >= ctx.Objects.Count) return;
+        var inst = ctx.Objects[ObjectList.SelectedIndex];
+        var cmd = new L22.Editor.Models.Commands.DeleteObjectCommand(ctx, inst);
+        ctx.History.ExecuteAndPush(cmd);
     }
 
     private void RefreshCamToggle(Border toggle, TextBlock icon, bool active)
