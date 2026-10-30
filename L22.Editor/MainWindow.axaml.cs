@@ -465,11 +465,84 @@ public partial class MainWindow : Window
     private EditorContext? _objectsBoundContext;
     private void BindObjectsPanel(EditorContext ctx)
     {
-        if (_objectsBoundContext is not null) _objectsBoundContext.ObjectsChanged -= RefreshObjectList;
+        if (_objectsBoundContext is not null)
+        {
+            _objectsBoundContext.ObjectsChanged -= RefreshObjectList;
+            _objectsBoundContext.Prefabs.PrefabsChanged -= RefreshPrefabList;
+        }
         _objectsBoundContext = ctx;
         ctx.ObjectsChanged += RefreshObjectList;
+        ctx.Prefabs.PrefabsChanged += RefreshPrefabList;
         RefreshObjectList();
+        RefreshPrefabList();
     }
+
+    private string? _selectedPrefabId;
+
+    private void RefreshPrefabList()
+    {
+        if (PrefabList is null) return;
+        var ctx = ViewModel.Active?.Context;
+        if (ctx is null)
+        {
+            PrefabList.ItemsSource = null;
+            if (LblPrefabCount is not null) LblPrefabCount.Text = "0 prefabs";
+            return;
+        }
+        var all = new List<L22.Editor.Models.Objects.ObjectPrefab>(ctx.Prefabs.All);
+        var labels = new List<string>(all.Count);
+        foreach (var p in all)
+        {
+            string name = string.IsNullOrEmpty(p.DisplayName) ? "(unnamed)" : p.DisplayName;
+            labels.Add($"{name}  ·  {p.Id}");
+        }
+        PrefabList.ItemsSource = labels;
+        if (LblPrefabCount is not null)
+            LblPrefabCount.Text = $"{all.Count} prefab" + (all.Count == 1 ? "" : "s");
+        if (LblPrefabLibDir is not null)
+            LblPrefabLibDir.Text = $"Library: {ctx.Prefabs.LibraryDir ?? "(unset)"}";
+    }
+
+    private void OnPrefabListSelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        var ctx = ViewModel.Active?.Context;
+        if (ctx is null || PrefabList is null)
+        {
+            _selectedPrefabId = null;
+            return;
+        }
+        var all = new List<L22.Editor.Models.Objects.ObjectPrefab>(ctx.Prefabs.All);
+        int idx = PrefabList.SelectedIndex;
+        _selectedPrefabId = (idx >= 0 && idx < all.Count) ? all[idx].Id : null;
+    }
+
+    private void OnNewPrefabInLibrary(object? sender, RoutedEventArgs e)
+    {
+        var ctx = ViewModel.Active?.Context;
+        if (ctx is null) return;
+        if (ctx.Prefabs.LibraryDir is null)
+        {
+            LblPrefabLibDir.Text = "Library: (save the scene first)";
+            return;
+        }
+        var p = new L22.Editor.Models.Objects.ObjectPrefab
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            DisplayName = "Untitled prefab",
+            ForeignIdentifier = "",
+        };
+        ctx.Prefabs.Upsert(p);
+    }
+
+    private void OnDeletePrefabFromLibrary(object? sender, RoutedEventArgs e)
+    {
+        var ctx = ViewModel.Active?.Context;
+        if (ctx is null || _selectedPrefabId is null) return;
+        ctx.Prefabs.Remove(_selectedPrefabId);
+        _selectedPrefabId = null;
+    }
+
+    private string PrefabForNewObject() => _selectedPrefabId ?? "none";
 
     private void RefreshObjectList()
     {
@@ -583,7 +656,7 @@ public partial class MainWindow : Window
         var inst = new L22.Editor.Models.Objects.ObjectInstance
         {
             Id = Guid.NewGuid().ToString("N"),
-            PrefabId = "none",
+            PrefabId = PrefabForNewObject(),
             CellX = 64,
             CellY = 64,
         };
@@ -947,7 +1020,7 @@ public partial class MainWindow : Window
         var inst = new L22.Editor.Models.Objects.ObjectInstance
         {
             Id = Guid.NewGuid().ToString("N"),
-            PrefabId = "none",
+            PrefabId = PrefabForNewObject(),
             CellX = x,
             CellY = y,
         };

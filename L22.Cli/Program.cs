@@ -100,6 +100,19 @@ static class Program
                 op = "object-delete",
                 id = kv["--id"],
             },
+            "prefab-list" => new { op = "prefab-list" },
+            "prefab-upsert" => new
+            {
+                op = "prefab-upsert",
+                id = kv.GetValueOrDefault("--id"),
+                displayName = kv.GetValueOrDefault("--display-name", ""),
+                foreignId = kv.GetValueOrDefault("--foreign-id", ""),
+            },
+            "prefab-delete" => new
+            {
+                op = "prefab-delete",
+                id = kv["--id"],
+            },
             _ => null,
         };
         if (req is null) { Console.Error.WriteLine($"unknown verb '{verb}'"); PrintUsage(); return 2; }
@@ -153,5 +166,8 @@ static class Program
           object-list
           object-place --cell-x N --cell-y N [--prefab ID] [--id ID] [--y-offset Y]
           object-delete --id ID
+          prefab-list
+          prefab-upsert [--id ID] [--display-name NAME] [--foreign-id KEY]
+          prefab-delete --id ID
         """);
 }

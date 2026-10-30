@@ -21,8 +21,12 @@ public class TerrainViewport : OpenGlControlBase
     public World? World { get; set; }
     public ToolManager? Tools { get; set; }
     // Objects placed in the active scene; drawn as pink-cube fallbacks
-    // in both viewports (icons come in a later phase).
+    // when no icon is resolved and as camera-facing textured billboards
+    // when one is.
     public System.Collections.Generic.IReadOnlyList<ObjectInstance>? Objects { get; set; }
+    // Prefab library the renderer resolves icon inheritance against. An
+    // instance with no IconOverride falls back to its prefab's Icon.
+    public PrefabLibrary? Prefabs { get; set; }
     public bool AllowPainting { get; set; } = false;
 
     // When set, this viewport's renderer draws the frustum of
@@ -151,11 +155,17 @@ public class TerrainViewport : OpenGlControlBase
     private EditorContext? _boundContext;
     public void BindContext(EditorContext ctx, bool allowTools = true)
     {
-        if (_boundContext is not null) _boundContext.ObjectsChanged -= OnObjectsChanged;
+        if (_boundContext is not null)
+        {
+            _boundContext.ObjectsChanged -= OnObjectsChanged;
+            _boundContext.Prefabs.PrefabsChanged -= OnObjectsChanged;
+        }
         BindWorld(ctx.World, allowTools ? ctx.Tools : null);
         Objects = ctx.Objects;
+        Prefabs = ctx.Prefabs;
         _boundContext = ctx;
         ctx.ObjectsChanged += OnObjectsChanged;
+        ctx.Prefabs.PrefabsChanged += OnObjectsChanged;
     }
 
     private void OnObjectsChanged() => RequestFrame();
@@ -290,7 +300,9 @@ public class TerrainViewport : OpenGlControlBase
             float sy = TerrainMeshBuilder.SampleSurfaceY(World, o.CellX, o.CellY);
             var pos = new Vector3(o.CellX + 0.5f, sy + o.YOffsetWorld + CubeHalfEdge, o.CellY + 0.5f);
 
-            var icon = o.IconOverride;  // Phase 5 will fall back to prefab.Icon
+            var icon = o.IconOverride;
+            if (icon is null && Prefabs?.Find(o.PrefabId) is { Icon: { } prefabIcon })
+                icon = prefabIcon;
             if (icon is null || string.IsNullOrEmpty(icon.ImagePath))
             {
                 arr[i] = new GpuObjectInstance(pos, null, Vector4.Zero);

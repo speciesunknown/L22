@@ -210,6 +210,9 @@ public sealed class AgentSession
             case "object-list":
             case "object-place":
             case "object-delete":
+            case "prefab-list":
+            case "prefab-upsert":
+            case "prefab-delete":
             {
                 var ctx = _control.GetActiveContext();
                 if (ctx is null) return new ServerResponse { Op = "error", Msg = "no active document" };
@@ -243,6 +246,12 @@ public sealed class AgentSession
                 return ExecuteObjectPlace(ctx, cmd);
             case "object-delete":
                 return ExecuteObjectDelete(ctx, cmd);
+            case "prefab-list":
+                return ExecutePrefabList(ctx);
+            case "prefab-upsert":
+                return ExecutePrefabUpsert(ctx, cmd);
+            case "prefab-delete":
+                return ExecutePrefabDelete(ctx, cmd);
         }
         return new ServerResponse { Op = "error", Msg = $"unknown doc op '{cmd.Op}'" };
     }
@@ -285,6 +294,43 @@ public sealed class AgentSession
         var del = new Models.Commands.DeleteObjectCommand(ctx, inst);
         ctx.History.ExecuteAndPush(del);
         return new ServerResponse { Op = "ok", Id = inst.Id };
+    }
+
+    private static ServerResponse ExecutePrefabList(EditorContext ctx)
+    {
+        var list = new System.Collections.Generic.List<PrefabInfo>();
+        foreach (var p in ctx.Prefabs.All)
+            list.Add(new PrefabInfo(p.Id, p.DisplayName, p.ForeignIdentifier));
+        return new ServerResponse { Op = "ok", Prefabs = list.ToArray() };
+    }
+
+    private static ServerResponse ExecutePrefabUpsert(EditorContext ctx, CommandRequest cmd)
+    {
+        if (ctx.Prefabs.LibraryDir is null)
+            return new ServerResponse { Op = "error", Msg = "prefab library not resolved — save the scene first" };
+        var p = new Models.Objects.ObjectPrefab
+        {
+            Id = string.IsNullOrEmpty(cmd.Id) ? System.Guid.NewGuid().ToString("N") : cmd.Id!,
+            DisplayName = cmd.DisplayName ?? "",
+            ForeignIdentifier = cmd.ForeignId ?? "",
+        };
+        // Keep existing values when upserting an existing prefab so a bare
+        // upsert doesn't blow away icon/properties set elsewhere.
+        if (ctx.Prefabs.Find(p.Id) is { } existing)
+        {
+            p.Icon = existing.Icon;
+            p.Properties = existing.Properties;
+        }
+        ctx.Prefabs.Upsert(p);
+        return new ServerResponse { Op = "ok", Id = p.Id };
+    }
+
+    private static ServerResponse ExecutePrefabDelete(EditorContext ctx, CommandRequest cmd)
+    {
+        if (string.IsNullOrEmpty(cmd.Id))
+            return new ServerResponse { Op = "error", Msg = "prefab-delete requires id" };
+        ctx.Prefabs.Remove(cmd.Id!);
+        return new ServerResponse { Op = "ok", Id = cmd.Id };
     }
 
     private static ServerResponse ExecutePaint(EditorContext ctx, CommandRequest cmd)

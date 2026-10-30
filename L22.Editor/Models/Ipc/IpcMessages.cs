@@ -28,6 +28,7 @@ public sealed class ServerResponse
     [JsonPropertyName("documents")] public DocumentInfo[]? Documents { get; set; }
     // Object ops: list returns objects; place returns the new id.
     [JsonPropertyName("objects")] public ObjectInfo[]? Objects { get; set; }
+    [JsonPropertyName("prefabs")] public PrefabInfo[]? Prefabs { get; set; }
     [JsonPropertyName("id")] public string? Id { get; set; }
     // Persistent hex code the agent should remember and present as `token`
     // on future connections to skip the PIN dialog.
@@ -40,6 +41,11 @@ public sealed record ObjectInfo(
     [property: JsonPropertyName("cellX")] int CellX,
     [property: JsonPropertyName("cellY")] int CellY,
     [property: JsonPropertyName("yOffsetWorld")] float YOffsetWorld);
+
+public sealed record PrefabInfo(
+    [property: JsonPropertyName("id")] string Id,
+    [property: JsonPropertyName("displayName")] string DisplayName,
+    [property: JsonPropertyName("foreignId")] string ForeignId);
 
 public sealed class CommandRequest
 {
@@ -63,4 +69,8 @@ public sealed class CommandRequest
     [JsonPropertyName("cellX")] public int? CellX { get; set; }
     [JsonPropertyName("cellY")] public int? CellY { get; set; }
     [JsonPropertyName("yOffsetWorld")] public double? YOffsetWorld { get; set; }
+
+    // Prefab ops:
+    [JsonPropertyName("displayName")] public string? DisplayName { get; set; }
+    [JsonPropertyName("foreignId")]   public string? ForeignId { get; set; }
 }

@@ -197,6 +197,26 @@
                     </StackPanel>
 
                     <Separator Margin="0,8"/>
+                    <TextBlock Text="Prefabs" Foreground="#DDD" FontSize="14" FontWeight="SemiBold"/>
+                    <TextBlock Name="LblPrefabCount" Text="0 prefabs" Foreground="#AAA" FontSize="11"/>
+                    <TextBlock Name="LblPrefabLibDir" Text="Library: (none)" Foreground="#777" FontSize="10" TextWrapping="Wrap"/>
+                    <Border Background="#1C1F26" CornerRadius="4" Padding="2" MinHeight="80">
+                        <ListBox Name="PrefabList" Background="Transparent" BorderThickness="0"
+                                 SelectionChanged="OnPrefabListSelectionChanged">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding}" Foreground="#DDD" FontSize="11" Padding="4,2"/>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </Border>
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <Button Content="+ New"   Click="OnNewPrefabInLibrary" HorizontalAlignment="Stretch"/>
+                        <Button Content="Delete"  Click="OnDeletePrefabFromLibrary" HorizontalAlignment="Stretch"/>
+                    </StackPanel>
+                    <TextBlock Text="Selected prefab is used by the + Add button and the Object placement tool." Foreground="#777" FontSize="10" TextWrapping="Wrap"/>
+
+                    <Separator Margin="0,8"/>
                     <TextBlock Text="Agent server" Foreground="#DDD" FontSize="14" FontWeight="SemiBold"/>
                     <TextBlock Name="LblServerStatus" Text="Server: starting..." Foreground="#CCC" FontSize="12"/>
                     <TextBlock Name="LblFileId"       Text="File ID: ..." Foreground="#CCC" FontSize="11" TextWrapping="Wrap"/>
