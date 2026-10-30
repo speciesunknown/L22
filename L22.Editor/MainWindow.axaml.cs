@@ -489,8 +489,17 @@ public partial class MainWindow : Window
 
     private void OnObjectListSelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
-        // Phase 3a: nothing to do yet. Phase 3b: focus the viewport cam on
-        // the selected object.
+        var ctx = ViewModel.Active?.Context;
+        if (ctx is null || ObjectList is null || PropertyTree is null) return;
+        int idx = ObjectList.SelectedIndex;
+        if (idx < 0 || idx >= ctx.Objects.Count)
+        {
+            PropertyTree.ItemsSource = null;
+            return;
+        }
+        // Phase 4a: show the instance's own PropertyOverrides. Prefab-
+        // inherited defaults land once the prefab editor exists.
+        PropertyTree.ItemsSource = ctx.Objects[idx].PropertyOverrides;
     }
 
     private void OnAddObjectClick(object? sender, RoutedEventArgs e)

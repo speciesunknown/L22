@@ -27,4 +27,15 @@ public sealed class PropertyNode
 
     // Kind == Array | Properties
     public List<PropertyNode>? Children { get; set; }
+
+    // Used by the UI tree view's data template. Not persisted.
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string DisplayLine => Kind switch
+    {
+        PropertyKind.Text       => $"{Name}: {TextValue}",
+        PropertyKind.Number     => $"{Name}: {NumberValue}",
+        PropertyKind.Array      => $"{Name}  [{Children?.Count ?? 0}]",
+        PropertyKind.Properties => $"{Name}  {{{Children?.Count ?? 0}}}",
+        _ => Name,
+    };
 }

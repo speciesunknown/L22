@@ -68,14 +68,47 @@ internal static class Templates
         }
 
         // Marker objects so Phase 2 rendering has something to show on load.
-        // Spread across the near-corner the default top-down camera actually
-        // sees (centre (64,64), half-height 72). Later a browser pane will
-        // let the user place these anywhere.
+        // Each carries sample properties so the property-tree panel has
+        // non-empty content for the user to inspect.
         objects = new List<ObjectInstance>
         {
-            new ObjectInstance { Id = "peak-marker",  PrefabId = "none", CellX = 64,  CellY = 64 },
-            new ObjectInstance { Id = "beach-marker", PrefabId = "none", CellX = 80,  CellY = 50 },
-            new ObjectInstance { Id = "water-marker", PrefabId = "none", CellX = 40,  CellY = 90 },
+            new ObjectInstance
+            {
+                Id = "peak-marker", PrefabId = "none", CellX = 64, CellY = 64,
+                PropertyOverrides =
+                {
+                    new PropertyNode { Name = "label", Kind = PropertyKind.Text, TextValue = "Island peak" },
+                    new PropertyNode { Name = "elevation_hint", Kind = PropertyKind.Number, NumberValue = 4.2 },
+                },
+            },
+            new ObjectInstance
+            {
+                Id = "beach-marker", PrefabId = "none", CellX = 80, CellY = 50,
+                PropertyOverrides =
+                {
+                    new PropertyNode { Name = "label", Kind = PropertyKind.Text, TextValue = "North beach" },
+                    new PropertyNode { Name = "spawn", Kind = PropertyKind.Properties, Children = new List<PropertyNode>
+                    {
+                        new PropertyNode { Name = "mob", Kind = PropertyKind.Text, TextValue = "crab" },
+                        new PropertyNode { Name = "count", Kind = PropertyKind.Number, NumberValue = 3 },
+                    } },
+                    new PropertyNode { Name = "loot", Kind = PropertyKind.Array, Children = new List<PropertyNode>
+                    {
+                        new PropertyNode { Name = "", Kind = PropertyKind.Text, TextValue = "driftwood" },
+                        new PropertyNode { Name = "", Kind = PropertyKind.Text, TextValue = "shell" },
+                        new PropertyNode { Name = "", Kind = PropertyKind.Text, TextValue = "message_bottle" },
+                    } },
+                },
+            },
+            new ObjectInstance
+            {
+                Id = "water-marker", PrefabId = "none", CellX = 40, CellY = 90,
+                PropertyOverrides =
+                {
+                    new PropertyNode { Name = "label", Kind = PropertyKind.Text, TextValue = "Shipwreck" },
+                    new PropertyNode { Name = "sunk", Kind = PropertyKind.Text, TextValue = "true" },
+                },
+            },
         };
     }
 }
