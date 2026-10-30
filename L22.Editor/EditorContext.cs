@@ -23,6 +23,11 @@ public sealed class EditorContext
     // reference the same instance; wire SetLibraryDir at load time.
     public PrefabLibrary Prefabs { get; } = new();
 
+    // Fired after any Objects mutation. Viewports subscribe in
+    // BindContext to redraw their object cubes.
+    public event System.Action? ObjectsChanged;
+    public void RaiseObjectsChanged() => ObjectsChanged?.Invoke();
+
     public EditorContext(string fileId) : this(new World(fileId)) { }
 
     public EditorContext(World world)

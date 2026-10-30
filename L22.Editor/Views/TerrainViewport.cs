@@ -143,11 +143,17 @@ public class TerrainViewport : OpenGlControlBase
         RequestFrame();
     }
 
+    private EditorContext? _boundContext;
     public void BindContext(EditorContext ctx, bool allowTools = true)
     {
+        if (_boundContext is not null) _boundContext.ObjectsChanged -= OnObjectsChanged;
         BindWorld(ctx.World, allowTools ? ctx.Tools : null);
         Objects = ctx.Objects;
+        _boundContext = ctx;
+        ctx.ObjectsChanged += OnObjectsChanged;
     }
+
+    private void OnObjectsChanged() => RequestFrame();
 
     public void ConfigureTopDown()
     {

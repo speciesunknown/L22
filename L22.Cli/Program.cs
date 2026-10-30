@@ -85,6 +85,21 @@ static class Program
                 value = kv.ContainsKey("--value") ? double.Parse(kv["--value"]) : (double?)null,
                 type = kv.GetValueOrDefault("--type"),
             },
+            "object-list" => new { op = "object-list" },
+            "object-place" => new
+            {
+                op = "object-place",
+                id = kv.GetValueOrDefault("--id"),
+                prefabId = kv.GetValueOrDefault("--prefab", "none"),
+                cellX = int.Parse(kv["--cell-x"]),
+                cellY = int.Parse(kv["--cell-y"]),
+                yOffsetWorld = kv.ContainsKey("--y-offset") ? double.Parse(kv["--y-offset"]) : (double?)null,
+            },
+            "object-delete" => new
+            {
+                op = "object-delete",
+                id = kv["--id"],
+            },
             _ => null,
         };
         if (req is null) { Console.Error.WriteLine($"unknown verb '{verb}'"); PrintUsage(); return 2; }
@@ -135,5 +150,8 @@ static class Program
           undo
           redo
           set-brush [--radius R] [--value 0..1]
+          object-list
+          object-place --cell-x N --cell-y N [--prefab ID] [--id ID] [--y-offset Y]
+          object-delete --id ID
         """);
 }

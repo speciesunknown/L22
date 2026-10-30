@@ -26,10 +26,20 @@ public sealed class ServerResponse
     [JsonPropertyName("height")] public int? Height { get; set; }
     [JsonPropertyName("path")] public string? Path { get; set; }
     [JsonPropertyName("documents")] public DocumentInfo[]? Documents { get; set; }
+    // Object ops: list returns objects; place returns the new id.
+    [JsonPropertyName("objects")] public ObjectInfo[]? Objects { get; set; }
+    [JsonPropertyName("id")] public string? Id { get; set; }
     // Persistent hex code the agent should remember and present as `token`
     // on future connections to skip the PIN dialog.
     [JsonPropertyName("token")] public string? Token { get; set; }
 }
+
+public sealed record ObjectInfo(
+    [property: JsonPropertyName("id")] string Id,
+    [property: JsonPropertyName("prefabId")] string PrefabId,
+    [property: JsonPropertyName("cellX")] int CellX,
+    [property: JsonPropertyName("cellY")] int CellY,
+    [property: JsonPropertyName("yOffsetWorld")] float YOffsetWorld);
 
 public sealed class CommandRequest
 {
@@ -46,4 +56,11 @@ public sealed class CommandRequest
     // Screenshot:
     [JsonPropertyName("viewport")] public string? Viewport { get; set; }  // "edit" or "free"
     [JsonPropertyName("path")] public string? Path { get; set; }
+
+    // Object ops:
+    [JsonPropertyName("id")] public string? Id { get; set; }
+    [JsonPropertyName("prefabId")] public string? PrefabId { get; set; }
+    [JsonPropertyName("cellX")] public int? CellX { get; set; }
+    [JsonPropertyName("cellY")] public int? CellY { get; set; }
+    [JsonPropertyName("yOffsetWorld")] public double? YOffsetWorld { get; set; }
 }

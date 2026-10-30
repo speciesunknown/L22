@@ -207,6 +207,9 @@ public sealed class AgentSession
             case "undo":
             case "redo":
             case "setBrush":
+            case "object-list":
+            case "object-place":
+            case "object-delete":
             {
                 var ctx = _control.GetActiveContext();
                 if (ctx is null) return new ServerResponse { Op = "error", Msg = "no active document" };
@@ -234,8 +237,54 @@ public sealed class AgentSession
                 if (cmd.Radius.HasValue) ctx.Brush.Radius = cmd.Radius.Value;
                 if (cmd.Value.HasValue) ctx.Brush.Strength = (float)cmd.Value.Value;
                 return new ServerResponse { Op = "ok" };
+            case "object-list":
+                return ExecuteObjectList(ctx);
+            case "object-place":
+                return ExecuteObjectPlace(ctx, cmd);
+            case "object-delete":
+                return ExecuteObjectDelete(ctx, cmd);
         }
         return new ServerResponse { Op = "error", Msg = $"unknown doc op '{cmd.Op}'" };
+    }
+
+    private static ServerResponse ExecuteObjectList(EditorContext ctx)
+    {
+        var arr = new ObjectInfo[ctx.Objects.Count];
+        for (int i = 0; i < ctx.Objects.Count; i++)
+        {
+            var o = ctx.Objects[i];
+            arr[i] = new ObjectInfo(o.Id, o.PrefabId, o.CellX, o.CellY, o.YOffsetWorld);
+        }
+        return new ServerResponse { Op = "ok", Objects = arr };
+    }
+
+    private static ServerResponse ExecuteObjectPlace(EditorContext ctx, CommandRequest cmd)
+    {
+        if (!cmd.CellX.HasValue || !cmd.CellY.HasValue)
+            return new ServerResponse { Op = "error", Msg = "object-place requires cellX,cellY" };
+        var inst = new Models.Objects.ObjectInstance
+        {
+            Id = string.IsNullOrEmpty(cmd.Id) ? System.Guid.NewGuid().ToString("N") : cmd.Id!,
+            PrefabId = cmd.PrefabId ?? "none",
+            CellX = cmd.CellX.Value,
+            CellY = cmd.CellY.Value,
+            YOffsetWorld = (float)(cmd.YOffsetWorld ?? 0.0),
+        };
+        var addCmd = new Models.Commands.AddObjectCommand(ctx, inst);
+        ctx.History.ExecuteAndPush(addCmd);
+        return new ServerResponse { Op = "ok", Id = inst.Id };
+    }
+
+    private static ServerResponse ExecuteObjectDelete(EditorContext ctx, CommandRequest cmd)
+    {
+        if (string.IsNullOrEmpty(cmd.Id))
+            return new ServerResponse { Op = "error", Msg = "object-delete requires id" };
+        var inst = ctx.Objects.Find(o => o.Id == cmd.Id);
+        if (inst is null)
+            return new ServerResponse { Op = "error", Msg = $"no object with id '{cmd.Id}'" };
+        var del = new Models.Commands.DeleteObjectCommand(ctx, inst);
+        ctx.History.ExecuteAndPush(del);
+        return new ServerResponse { Op = "ok", Id = inst.Id };
     }
 
     private static ServerResponse ExecutePaint(EditorContext ctx, CommandRequest cmd)
