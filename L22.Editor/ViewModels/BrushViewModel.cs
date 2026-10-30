@@ -11,6 +11,7 @@ public enum ToolKind
     Brush,
     CornerElevation,
     Dropper,
+    PlaceObject,
 }
 
 // Sculpt mode is driven by modifier keys while the brush is active.

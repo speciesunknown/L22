@@ -59,6 +59,13 @@
                         <TextBlock Text="Dropper" HorizontalAlignment="Center" FontSize="10"/>
                     </StackPanel>
                 </Button>
+                <Button Name="BtnToolObject" Click="OnSelectToolPlaceObject" HorizontalAlignment="Stretch" Padding="4,6"
+                        ToolTip.Tip="Click in the top-down view to drop a new object">
+                    <StackPanel>
+                        <TextBlock Text="◆" HorizontalAlignment="Center" FontSize="20" Foreground="#FF99CC"/>
+                        <TextBlock Text="Object" HorizontalAlignment="Center" FontSize="10"/>
+                    </StackPanel>
+                </Button>
                 <Separator Margin="0,8"/>
                 <TextBlock Text="Layer" Foreground="#AAA" FontSize="11" HorizontalAlignment="Center"/>
                 <Button Name="BtnLayerElev" Click="OnSelectLayerElev" HorizontalAlignment="Stretch" Padding="4,6">

@@ -101,6 +101,7 @@ public partial class MainWindow : Window
         EditViewport.BoxSelectVisualChanged += RefreshRubberBand;
         EditViewport.SelectionChanged += UpdateCornerPanel;
         EditViewport.CellSampled += OnCellSampled;
+        EditViewport.ObjectPlaceRequested += OnObjectPlaceRequested;
 
         RegisterSliderBinding(SlRadius,    LblRadius,    TxtRadius,    v => { if (ViewModel.Brush is { } b) b.Radius = (int)Math.Round(v); }, v => ((int)Math.Round(v)).ToString());
         RegisterSliderBinding(SlStrength,  LblStrength,  TxtStrength,  v => { if (ViewModel.Brush is { } b) b.Strength = (float)v; },        v => v.ToString("0.00"));
@@ -814,6 +815,7 @@ public partial class MainWindow : Window
         if (ViewModel.Brush is { } b) b.ActiveTool = ToolKind.Brush;
         EditViewport.CornerToolActive = false;
         EditViewport.DropperToolActive = false;
+        EditViewport.PlaceObjectToolActive = false;
         EditViewport.ClearSelectedCorners();
         EditViewportHost.Cursor = new Cursor(StandardCursorType.None);
         DropperOverlay.IsVisible = false;
@@ -826,6 +828,7 @@ public partial class MainWindow : Window
         if (ViewModel.Brush is { } b) b.ActiveTool = ToolKind.CornerElevation;
         EditViewport.CornerToolActive = true;
         EditViewport.DropperToolActive = false;
+        EditViewport.PlaceObjectToolActive = false;
         // Hide the OS cursor and let the Avalonia Path overlay represent it.
         EditViewportHost.Cursor = new Cursor(StandardCursorType.None);
         UpdateLayerUi();
@@ -837,9 +840,36 @@ public partial class MainWindow : Window
         if (ViewModel.Brush is { } b) b.ActiveTool = ToolKind.Dropper;
         EditViewport.CornerToolActive = false;
         EditViewport.DropperToolActive = true;
+        EditViewport.PlaceObjectToolActive = false;
         EditViewport.ClearSelectedCorners();
         EditViewportHost.Cursor = new Cursor(StandardCursorType.None);
         UpdateLayerUi();
+    }
+
+    private void OnSelectToolPlaceObject(object? s, RoutedEventArgs e)
+    {
+        if (ViewModel.Brush is { } b) b.ActiveTool = ToolKind.PlaceObject;
+        EditViewport.CornerToolActive = false;
+        EditViewport.DropperToolActive = false;
+        EditViewport.PlaceObjectToolActive = true;
+        EditViewport.ClearSelectedCorners();
+        EditViewportHost.Cursor = new Cursor(StandardCursorType.Cross);
+        UpdateLayerUi();
+    }
+
+    private void OnObjectPlaceRequested(int x, int y)
+    {
+        var ctx = ViewModel.Active?.Context;
+        if (ctx is null) return;
+        var inst = new L22.Editor.Models.Objects.ObjectInstance
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            PrefabId = "none",
+            CellX = x,
+            CellY = y,
+        };
+        var cmd = new L22.Editor.Models.Commands.AddObjectCommand(ctx, inst);
+        ctx.History.ExecuteAndPush(cmd);
     }
 
     private void OnCellSampled(int x, int y)

@@ -53,6 +53,11 @@ public class TerrainViewport : OpenGlControlBase
     public bool DropperToolActive { get; set; }
     public event Action<int, int>? CellSampled;
 
+    // Place-object tool: left-click drops a new ObjectInstance at the
+    // picked cell. MainWindow sets this when the toolbar button lights up.
+    public bool PlaceObjectToolActive { get; set; }
+    public event Action<int, int>? ObjectPlaceRequested;
+
     // Last committed selection (populated on box-select release) — chunk
     // corner-grid coords, not per-cell vertices. Consumed by the right
     // panel's Add/Override buttons.
@@ -227,7 +232,7 @@ public class TerrainViewport : OpenGlControlBase
         gl.BindFramebuffer(GL_FRAMEBUFFER, fb);
 
         float brushRadiusWorld = Tools?.Brush.Radius ?? 1;
-        bool brushPaintableNow = _brushVisible && AllowPainting && !CornerToolActive && !DropperToolActive;
+        bool brushPaintableNow = _brushVisible && AllowPainting && !CornerToolActive && !DropperToolActive && !PlaceObjectToolActive;
 
         // Greyscale range: at least [0, 1] in painted units; widen if the
         // world has reached further.
@@ -429,6 +434,12 @@ public class TerrainViewport : OpenGlControlBase
         {
             var cell = PickWorldCell(pos);
             if (cell.HasValue) CellSampled?.Invoke(cell.Value.x, cell.Value.y);
+            return;
+        }
+        if (props.IsLeftButtonPressed && PlaceObjectToolActive && TopDown)
+        {
+            var cell = PickWorldCell(pos);
+            if (cell.HasValue) ObjectPlaceRequested?.Invoke(cell.Value.x, cell.Value.y);
             return;
         }
         if (props.IsLeftButtonPressed && CornerToolActive && TopDown)
