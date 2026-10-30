@@ -7,6 +7,7 @@ using Avalonia.OpenGL;
 using Avalonia.OpenGL.Controls;
 using Avalonia.Threading;
 using Point = Avalonia.Point;
+using L22.Editor.Models.Objects;
 using L22.Editor.Models.Rendering;
 using L22.Editor.Models.Tools;
 using L22.Editor.Models.World;
@@ -19,6 +20,9 @@ public class TerrainViewport : OpenGlControlBase
     public Camera Camera { get; } = new();
     public World? World { get; set; }
     public ToolManager? Tools { get; set; }
+    // Objects placed in the active scene; drawn as pink-cube fallbacks
+    // in both viewports (icons come in a later phase).
+    public System.Collections.Generic.IReadOnlyList<ObjectInstance>? Objects { get; set; }
     public bool AllowPainting { get; set; } = false;
 
     // When set, this viewport's renderer draws the frustum of
@@ -140,7 +144,10 @@ public class TerrainViewport : OpenGlControlBase
     }
 
     public void BindContext(EditorContext ctx, bool allowTools = true)
-        => BindWorld(ctx.World, allowTools ? ctx.Tools : null);
+    {
+        BindWorld(ctx.World, allowTools ? ctx.Tools : null);
+        Objects = ctx.Objects;
+    }
 
     public void ConfigureTopDown()
     {
@@ -224,6 +231,7 @@ public class TerrainViewport : OpenGlControlBase
         float greyHigh = Math.Max(1f, highN) * scale;
 
         var frustumPoints = ComputeFrustumPoints();
+        var objectCubes = ComputeObjectCubeCenters();
 
         _renderer.Render(gl, w, h, Camera.View, Camera.Projection(aspect),
                          _lastBrushCenter, brushRadiusWorld, brushPaintableNow,
@@ -232,7 +240,8 @@ public class TerrainViewport : OpenGlControlBase
                          selectedCorners: CornerToolActive ? SelectedCorners : null,
                          greyLowY: greyLow, greyHighY: greyHigh,
                          hideUnset: !TopDown,
-                         frustumPoints: frustumPoints);
+                         frustumPoints: frustumPoints,
+                         objectCubes: objectCubes);
 
         if (CaptureRequested)
         {
@@ -250,6 +259,24 @@ public class TerrainViewport : OpenGlControlBase
         // Any dependent viewport (e.g. the top-down showing this cam's
         // frustum) needs a frame now that this one moved.
         if (MirrorFramesTo is { } other) other.RequestFrame();
+    }
+
+    // Pink-cube fallback positions for Phase 2a. Icon-textured billboards
+    // come in Phase 2b. Y is terrain-surface + YOffsetWorld + half the
+    // cube's edge so its bottom sits on the ground. CubeHalfEdge must stay
+    // in sync with uSize in TerrainGlRenderer.DrawObjectCubes.
+    private const float CubeHalfEdge = 1.0f;  // uSize=2.0 → half-edge 1
+    private Vector3[]? ComputeObjectCubeCenters()
+    {
+        if (Objects is null || Objects.Count == 0 || World is null) return null;
+        var pts = new Vector3[Objects.Count];
+        for (int i = 0; i < Objects.Count; i++)
+        {
+            var o = Objects[i];
+            float sy = TerrainMeshBuilder.SampleSurfaceY(World, o.CellX, o.CellY);
+            pts[i] = new Vector3(o.CellX + 0.5f, sy + o.YOffsetWorld + CubeHalfEdge, o.CellY + 0.5f);
+        }
+        return pts;
     }
 
     // Projects the source viewport's view frustum onto y=0 and returns

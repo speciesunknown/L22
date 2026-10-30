@@ -46,18 +46,19 @@ class Program
 
             var fileId = System.IO.Path.GetFileNameWithoutExtension(path);
             var world = new Models.World.World(fileId);
+            System.Collections.Generic.List<Models.Objects.ObjectInstance> objects;
             switch (template?.ToLowerInvariant())
             {
                 case null:
                 case "":
-                case "empty":        Templates.FillEmpty(world); break;
-                case "desert-island": Templates.FillDesertIsland(world); break;
+                case "empty":         Templates.FillEmpty(world, out objects); break;
+                case "desert-island": Templates.FillDesertIsland(world, out objects); break;
                 default:
                     Console.Error.WriteLine($"unknown template '{template}'. known: empty, desert-island");
                     return 1;
             }
 
-            Models.World.ProjectIO.Save(world, Models.DocumentKind.Scene, path);
+            Models.World.ProjectIO.Save(world, Models.DocumentKind.Scene, path, objects);
             Console.Out.WriteLine(System.IO.Path.GetFullPath(path));
             return 0;
         }

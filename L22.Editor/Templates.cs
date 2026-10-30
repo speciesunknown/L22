@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using L22.Editor.Models;
+using L22.Editor.Models.Objects;
 using L22.Editor.Models.World;
 
 namespace L22.Editor;
@@ -11,17 +13,22 @@ internal static class Templates
 {
     // Fills every cell of an 8×8-chunk world with grass at sea level —
     // the same output `File → New Scene` produces inside the UI.
-    public static void FillEmpty(World world)
+    public static void FillEmpty(World world) => FillEmpty(world, out _);
+
+    public static void FillEmpty(World world, out List<ObjectInstance> objects)
     {
         world.InitializeDefault(8, 8);
         world.FillAllCellsWithType((byte)TerrainType.Grass);
+        objects = new List<ObjectInstance>();
     }
+
+    public static void FillDesertIsland(World world) => FillDesertIsland(world, out _);
 
     // Round grassy island with a sand beach ring sat on open water. Water
     // cells are TerrainType.Unset (zero geometry weight — the game treats
     // them as absent) with elevation 0; sand slopes gently up, grass peaks
     // near the island centre.
-    public static void FillDesertIsland(World world)
+    public static void FillDesertIsland(World world, out List<ObjectInstance> objects)
     {
         const int chunks = 8;
         world.InitializeDefault(chunks, chunks);
@@ -59,5 +66,16 @@ internal static class Templates
                 world.SetElevation(x, y, h);
             }
         }
+
+        // Marker objects so Phase 2 rendering has something to show on load.
+        // Spread across the near-corner the default top-down camera actually
+        // sees (centre (64,64), half-height 72). Later a browser pane will
+        // let the user place these anywhere.
+        objects = new List<ObjectInstance>
+        {
+            new ObjectInstance { Id = "peak-marker",  PrefabId = "none", CellX = 64,  CellY = 64 },
+            new ObjectInstance { Id = "beach-marker", PrefabId = "none", CellX = 80,  CellY = 50 },
+            new ObjectInstance { Id = "water-marker", PrefabId = "none", CellX = 40,  CellY = 90 },
+        };
     }
 }

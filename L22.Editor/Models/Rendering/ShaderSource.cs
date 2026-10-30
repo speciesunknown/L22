@@ -127,4 +127,33 @@ void main() {
     oColor = uColor;
 }
 ";
+
+    // Pink-cube fallback for object instances with no icon. Flat per-object
+    // color with cheap positional shading so cube faces read as 3D.
+    public const string CubeVertex = @"#version 300 es
+precision highp float;
+layout(location = 0) in vec3 aPos;
+uniform mat4 uView;
+uniform mat4 uProj;
+uniform vec3 uCenter;
+uniform float uSize;
+out vec3 vLocal;
+void main() {
+    vLocal = aPos;
+    vec3 world = uCenter + aPos * uSize;
+    gl_Position = uProj * uView * vec4(world, 1.0);
+}
+";
+
+    public const string CubeFragment = @"#version 300 es
+precision highp float;
+in vec3 vLocal;
+uniform vec4 uColor;
+out vec4 oColor;
+void main() {
+    // Brighter on +Y, darker on -Y so the cube reads as 3D even unlit.
+    float shade = 0.70 + 0.30 * (vLocal.y + 0.5);
+    oColor = vec4(uColor.rgb * shade, uColor.a);
+}
+";
 }

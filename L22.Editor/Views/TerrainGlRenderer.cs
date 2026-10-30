@@ -34,6 +34,11 @@ public sealed class TerrainGlRenderer
     private int _selVao, _selVbo;
     private int _selCount;
 
+    private int _cubeProgram;
+    private int _uCubeView, _uCubeProj, _uCubeCenter, _uCubeSize, _uCubeColor;
+    private int _cubeVao, _cubeVbo, _cubeEbo;
+    private bool _cubeInitialized;
+
     private readonly Dictionary<ChunkCoord, GpuChunk> _chunks = new();
     private readonly HashSet<ChunkCoord> _knownDirty = new();
     private readonly GlExtras _extras = new();
@@ -73,6 +78,13 @@ public sealed class TerrainGlRenderer
         _uWireProj = gl.GetUniformLocationString(_wireProgram, "uProj");
         _uWireColor = gl.GetUniformLocationString(_wireProgram, "uLineColor");
 
+        _cubeProgram = CompileLink(gl, ShaderSource.CubeVertex, ShaderSource.CubeFragment);
+        _uCubeView = gl.GetUniformLocationString(_cubeProgram, "uView");
+        _uCubeProj = gl.GetUniformLocationString(_cubeProgram, "uProj");
+        _uCubeCenter = gl.GetUniformLocationString(_cubeProgram, "uCenter");
+        _uCubeSize = gl.GetUniformLocationString(_cubeProgram, "uSize");
+        _uCubeColor = gl.GetUniformLocationString(_cubeProgram, "uColor");
+
         _cornerProgram = CompileLink(gl, ShaderSource.CornerPointVertex, ShaderSource.CornerPointFragment);
         _uCornerView = gl.GetUniformLocationString(_cornerProgram, "uView");
         _uCornerProj = gl.GetUniformLocationString(_cornerProgram, "uProj");
@@ -100,7 +112,8 @@ public sealed class TerrainGlRenderer
                        float greyLowY = 0f,
                        float greyHighY = 14f,
                        bool hideUnset = false,
-                       Vector3[]? frustumPoints = null)
+                       Vector3[]? frustumPoints = null,
+                       Vector3[]? objectCubes = null)
     {
         // Apply a pending world swap now that we have a live GL context.
         if (_pendingNewWorld is { } nextWorld)
@@ -170,6 +183,9 @@ public sealed class TerrainGlRenderer
         if (frustumPoints is { Length: 5 })
             DrawFrustum(gl, view, proj, frustumPoints);
 
+        if (objectCubes is { Length: > 0 })
+            DrawObjectCubes(gl, view, proj, objectCubes, keepDepthTest: hideUnset);
+
         if (showCornerMarkers)
         {
             // Overlay — never depth-clipped so corners show even when a
@@ -201,6 +217,62 @@ public sealed class TerrainGlRenderer
 
             gl.Enable(GL_DEPTH_TEST);
         }
+    }
+
+    // Unit cube centered at origin, 1 unit per side. 8 verts, 36 indices
+    // (6 faces × 2 triangles). CCW winding so GL default front-face works.
+    private static readonly float[] CubeVerts =
+    {
+        -0.5f,-0.5f,-0.5f,   0.5f,-0.5f,-0.5f,   0.5f, 0.5f,-0.5f,  -0.5f, 0.5f,-0.5f,  // back  face z=-0.5
+        -0.5f,-0.5f, 0.5f,   0.5f,-0.5f, 0.5f,   0.5f, 0.5f, 0.5f,  -0.5f, 0.5f, 0.5f,  // front face z=+0.5
+    };
+    private static readonly uint[] CubeIndices =
+    {
+        0,2,1, 0,3,2,   // back
+        4,5,6, 4,6,7,   // front
+        0,7,3, 0,4,7,   // left
+        1,2,6, 1,6,5,   // right
+        0,1,5, 0,5,4,   // bottom
+        3,7,6, 3,6,2,   // top
+    };
+
+    private unsafe void DrawObjectCubes(GlInterface gl, Matrix4x4 view, Matrix4x4 proj,
+                                        Vector3[] centers, bool keepDepthTest)
+    {
+        if (!_cubeInitialized)
+        {
+            _cubeVao = gl.GenVertexArray();
+            _cubeVbo = gl.GenBuffer();
+            _cubeEbo = gl.GenBuffer();
+            gl.BindVertexArray(_cubeVao);
+            gl.BindBuffer(GL_ARRAY_BUFFER, _cubeVbo);
+            fixed (float* vp = CubeVerts)
+                gl.BufferData(GL_ARRAY_BUFFER,
+                    (IntPtr)(CubeVerts.Length * sizeof(float)),
+                    (IntPtr)vp, GL_STATIC_DRAW);
+            gl.BindBuffer(GL_ELEMENT_ARRAY_BUFFER, _cubeEbo);
+            fixed (uint* ip = CubeIndices)
+                gl.BufferData(GL_ELEMENT_ARRAY_BUFFER,
+                    (IntPtr)(CubeIndices.Length * sizeof(uint)),
+                    (IntPtr)ip, GL_STATIC_DRAW);
+            gl.VertexAttribPointer(0, 3, GL_FLOAT, 0, 3 * sizeof(float), IntPtr.Zero);
+            gl.EnableVertexAttribArray(0);
+            _cubeInitialized = true;
+        }
+
+        if (!keepDepthTest) gl.Disable(GL_DEPTH_TEST);
+        gl.UseProgram(_cubeProgram);
+        SetUniformMatrix4(gl, _uCubeView, view);
+        SetUniformMatrix4(gl, _uCubeProj, proj);
+        _extras.Uniform4f(_uCubeColor, 1.0f, 0.42f, 0.78f, 1.0f);  // pink
+        gl.Uniform1f(_uCubeSize, 2.0f);
+        gl.BindVertexArray(_cubeVao);
+        foreach (var c in centers)
+        {
+            _extras.Uniform3f(_uCubeCenter, c.X, c.Y, c.Z);
+            gl.DrawElements(GL_TRIANGLES, CubeIndices.Length, GlExtras.GL_UNSIGNED_INT, IntPtr.Zero);
+        }
+        if (!keepDepthTest) gl.Enable(GL_DEPTH_TEST);
     }
 
     // 8 line segments: apex→each ground corner, then the ground-plane ring.
@@ -318,6 +390,7 @@ public sealed class TerrainGlRenderer
         if (_terrainProgram != 0) gl.DeleteProgram(_terrainProgram);
         if (_wireProgram != 0) gl.DeleteProgram(_wireProgram);
         if (_cornerProgram != 0) gl.DeleteProgram(_cornerProgram);
+        if (_cubeProgram != 0) gl.DeleteProgram(_cubeProgram);
         if (_frustumInitialized)
         {
             if (_frustumEbo != 0) gl.DeleteBuffer(_frustumEbo);
@@ -326,9 +399,18 @@ public sealed class TerrainGlRenderer
             _frustumEbo = _frustumVbo = _frustumVao = 0;
             _frustumInitialized = false;
         }
+        if (_cubeInitialized)
+        {
+            if (_cubeEbo != 0) gl.DeleteBuffer(_cubeEbo);
+            if (_cubeVbo != 0) gl.DeleteBuffer(_cubeVbo);
+            if (_cubeVao != 0) gl.DeleteVertexArray(_cubeVao);
+            _cubeEbo = _cubeVbo = _cubeVao = 0;
+            _cubeInitialized = false;
+        }
         _terrainProgram = 0;
         _wireProgram = 0;
         _cornerProgram = 0;
+        _cubeProgram = 0;
         Initialized = false;
     }
 

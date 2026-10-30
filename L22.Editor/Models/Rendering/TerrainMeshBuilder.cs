@@ -115,6 +115,12 @@ public static class TerrainMeshBuilder
         return data;
     }
 
+    // World-space Y of the terrain surface at (wx, wy). Thin wrapper over
+    // the per-vertex elevation sampler the mesh uses, scaled to world units
+    // — object placements use this to sit on the ground.
+    public static float SampleSurfaceY(World.World world, int wx, int wy)
+        => SampleVertexElevation(world, wx, wy) * ElevationScale;
+
     // Final vertex elevation = chunk-corner contribution (bilinear across
     // the 4 chunk corners the vertex sits inside) + terrain elevation
     // (per-cell, averaged across the up to four cells touching this vertex,
