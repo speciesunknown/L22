@@ -866,6 +866,28 @@ public partial class MainWindow : Window
         var after = new System.Numerics.Vector2(x, y);
         if (System.Math.Abs(before.X - after.X) < 1e-4f && System.Math.Abs(before.Y - after.Y) < 1e-4f)
             return;
+
+        // Journey item 6: if multiple vertices are selected, apply the same
+        // world-delta to every selected handle so the whole flock rotates /
+        // extends together.
+        if (ctx.SelectedRiverVertices.Count > 1
+            && ctx.SelectedRiverVertices.Contains((riverId, index)))
+        {
+            var delta = after - before;
+            var entries = new System.Collections.Generic.List<(string, int,
+                System.Numerics.Vector2, System.Numerics.Vector2)>();
+            foreach (var key in ctx.SelectedRiverVertices)
+            {
+                var sel = FindRiverRecursive(ctx, key.riverId);
+                if (sel is null || key.index < 0 || key.index >= sel.Vertices.Count) continue;
+                var b = sel.Vertices[key.index].BezierHandleOut;
+                entries.Add((key.riverId, key.index, b, b + delta));
+            }
+            var bulk = new L22.Editor.Models.Commands.BulkSetRiverVertexHandleCommand(ctx, entries);
+            ctx.History.ExecuteAndPush(bulk);
+            return;
+        }
+
         var cmd = new L22.Editor.Models.Commands.SetRiverVertexHandleCommand(
             ctx, riverId, index, before, after);
         ctx.History.ExecuteAndPush(cmd);

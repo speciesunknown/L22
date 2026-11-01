@@ -208,6 +208,58 @@ public sealed class SetRiverVertexPositionCommand : IEditorCommand
     }
 }
 
+// Journey item 6: a direction edit on a multi-selection moves every
+// selected vertex's handle by the same world delta. Captures the full
+// before/after vectors per entry so undo restores exactly.
+public sealed class BulkSetRiverVertexHandleCommand : IEditorCommand
+{
+    private readonly EditorContext _ctx;
+    private readonly System.Collections.Generic.List<(string riverId, int index,
+        System.Numerics.Vector2 before, System.Numerics.Vector2 after)> _entries;
+    public string Name => $"Rotate {_entries.Count} river handles";
+
+    public BulkSetRiverVertexHandleCommand(EditorContext ctx,
+        System.Collections.Generic.List<(string, int, System.Numerics.Vector2, System.Numerics.Vector2)> entries)
+    {
+        _ctx = ctx; _entries = entries;
+    }
+    public void Execute(World.World world)
+    {
+        foreach (var e in _entries) Apply(e.riverId, e.index, e.after);
+        _ctx.RaiseRiversChanged();
+    }
+    public void Undo(World.World world)
+    {
+        foreach (var e in _entries) Apply(e.riverId, e.index, e.before);
+        _ctx.RaiseRiversChanged();
+    }
+    private void Apply(string riverId, int index, System.Numerics.Vector2 v)
+    {
+        var r = FindAnywhere(_ctx, riverId);
+        if (r is null || index < 0 || index >= r.Vertices.Count) return;
+        r.Vertices[index].BezierHandleOut = v;
+    }
+    private static River? FindAnywhere(EditorContext ctx, string id)
+    {
+        foreach (var r in ctx.Rivers)
+        {
+            var hit = Recurse(r, id);
+            if (hit is not null) return hit;
+        }
+        return null;
+    }
+    private static River? Recurse(River r, string id)
+    {
+        if (r.Id == id) return r;
+        foreach (var b in r.Branches)
+        {
+            var hit = Recurse(b, id);
+            if (hit is not null) return hit;
+        }
+        return null;
+    }
+}
+
 // Scenario 3: increase the width of the selected vertex changes that
 // node *and its two neighbours*. The neighbour effect is at half the
 // delta so the taper is smooth.
