@@ -1027,6 +1027,7 @@ public partial class MainWindow : Window
             DropperOverlay.IsVisible = false;
             BoxSelectOverlay.IsVisible = false;
             BrushOverlay.IsVisible = false;
+            PlaceObjectOverlay.IsVisible = false;
             return;
         }
 
@@ -1040,10 +1041,12 @@ public partial class MainWindow : Window
         bool wantDropper = brush.ActiveTool == ToolKind.Dropper         && overEdit;
         bool wantBox     = brush.ActiveTool == ToolKind.CornerElevation && overEdit;
         bool wantBrush   = brush.ActiveTool == ToolKind.Brush           && overEdit;
+        bool wantPlace   = brush.ActiveTool == ToolKind.PlaceObject     && overEdit;
 
-        DropperOverlay.IsVisible   = wantDropper;
-        BoxSelectOverlay.IsVisible = wantBox;
-        BrushOverlay.IsVisible     = wantBrush;
+        DropperOverlay.IsVisible     = wantDropper;
+        BoxSelectOverlay.IsVisible   = wantBox;
+        BrushOverlay.IsVisible       = wantBrush;
+        PlaceObjectOverlay.IsVisible = wantPlace;
 
         if (wantDropper)
         {
@@ -1062,6 +1065,11 @@ public partial class MainWindow : Window
             // brush, there is no "tip" to align with.
             Canvas.SetLeft(BrushOverlay, hostPos.X - BrushOverlay.Width / 2);
             Canvas.SetTop(BrushOverlay, hostPos.Y - BrushOverlay.Height / 2);
+        }
+        if (wantPlace)
+        {
+            Canvas.SetLeft(PlaceObjectOverlay, hostPos.X - PlaceObjectOverlay.Width / 2);
+            Canvas.SetTop(PlaceObjectOverlay, hostPos.Y - PlaceObjectOverlay.Height / 2);
         }
     }
 
@@ -1175,6 +1183,7 @@ public partial class MainWindow : Window
         EditViewportHost.Cursor = new Cursor(StandardCursorType.None);
         DropperOverlay.IsVisible = false;
         BoxSelectOverlay.IsVisible = false;
+        PlaceObjectOverlay.IsVisible = false;
         UpdateLayerUi();
     }
 
@@ -1186,6 +1195,9 @@ public partial class MainWindow : Window
         EditViewport.PlaceObjectToolActive = false;
         // Hide the OS cursor and let the Avalonia Path overlay represent it.
         EditViewportHost.Cursor = new Cursor(StandardCursorType.None);
+        BrushOverlay.IsVisible = false;
+        DropperOverlay.IsVisible = false;
+        PlaceObjectOverlay.IsVisible = false;
         UpdateLayerUi();
         EditViewport.RequestFrame();
     }
@@ -1198,6 +1210,9 @@ public partial class MainWindow : Window
         EditViewport.PlaceObjectToolActive = false;
         EditViewport.ClearSelectedCorners();
         EditViewportHost.Cursor = new Cursor(StandardCursorType.None);
+        BrushOverlay.IsVisible = false;
+        BoxSelectOverlay.IsVisible = false;
+        PlaceObjectOverlay.IsVisible = false;
         UpdateLayerUi();
     }
 
@@ -1208,7 +1223,12 @@ public partial class MainWindow : Window
         EditViewport.DropperToolActive = false;
         EditViewport.PlaceObjectToolActive = true;
         EditViewport.ClearSelectedCorners();
-        EditViewportHost.Cursor = new Cursor(StandardCursorType.Cross);
+        // Hide the OS cursor; the pink diamond overlay represents the drop
+        // site. Matches the Brush / Corner / Dropper tools' pattern.
+        EditViewportHost.Cursor = new Cursor(StandardCursorType.None);
+        BrushOverlay.IsVisible = false;
+        BoxSelectOverlay.IsVisible = false;
+        DropperOverlay.IsVisible = false;
         UpdateLayerUi();
     }
 

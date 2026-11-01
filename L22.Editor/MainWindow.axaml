@@ -306,6 +306,13 @@
                         <Viewbox Name="BrushOverlay" Width="28" Height="28" IsVisible="False">
                             <Path Name="BrushOverlayPath" Data="{StaticResource IconBrushAdd}" Fill="White" Stroke="Black" StrokeThickness="0.6"/>
                         </Viewbox>
+                        <!-- Diamond preview for the Object placement tool. Pink to
+                             match the cube fallback the drop will spawn. -->
+                        <Canvas Name="PlaceObjectOverlay" Width="18" Height="18" IsVisible="False"
+                                IsHitTestVisible="False">
+                            <Path Data="M 9 0 L 18 9 L 9 18 L 0 9 Z"
+                                  Fill="#99FF66AA" Stroke="#FFFF99CC" StrokeThickness="1.2"/>
+                        </Canvas>
                     </Canvas>
                     <TextBlock Text="Top-down · paint here (WASD pan · R/F zoom · right-drag pan)"
                                Foreground="#99FFFFFF"

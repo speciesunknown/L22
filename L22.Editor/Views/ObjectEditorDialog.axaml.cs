@@ -2,7 +2,9 @@ using System.Collections.ObjectModel;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.VisualTree;
 using L22.Editor.Models.Objects;
 using L22.Editor.ViewModels;
 
@@ -114,6 +116,70 @@ public partial class ObjectEditorDialog : Window
     }
 
     private void OnCancel(object? sender, RoutedEventArgs e) => Close(false);
+
+    // Enter in the main form fields commits the current text (LostFocus
+    // flushes the two-way binding) and tabs to the next logical field.
+    private void OnFieldKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter) return;
+        if (ReferenceEquals(sender, TxtDisplayName))
+        {
+            TxtCodeName.Focus();
+            e.Handled = true;
+        }
+        else if (ReferenceEquals(sender, TxtCodeName))
+        {
+            if (GridPrefabPicker.IsVisible) CbPrefabPicker.Focus();
+            else PropTree.Focus();
+            e.Handled = true;
+        }
+    }
+
+    // Enter inside a tree row's Name TextBox jumps to that row's Value
+    // TextBox. Enter inside the Value jumps to the Name field of the next
+    // sibling in the parent list — Enter effectively walks down the tree
+    // row by row, which matches the common Excel-style "finish this cell
+    // and go to the one below" expectation.
+    private void OnTreeRowKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter || sender is not TextBox tb) return;
+
+        var row = tb.FindAncestorOfType<StackPanel>();
+        if (row is null) return;
+
+        if (tb.Tag as string == "name")
+        {
+            // Name → Value in the same row.
+            foreach (var child in row.GetVisualChildren())
+                if (child is TextBox other && other.Tag as string == "value")
+                {
+                    other.Focus();
+                    e.Handled = true;
+                    return;
+                }
+        }
+        else if (tb.Tag as string == "value")
+        {
+            // Value → next sibling TreeViewItem's Name box, if we can
+            // find one. If not, swallow Enter so the dialog doesn't
+            // commit (OK is not IsDefault, but a bubbling KeyDown could
+            // still trigger focused-button activation).
+            e.Handled = true;
+            var treeItem = tb.FindAncestorOfType<TreeViewItem>();
+            if (treeItem?.Parent is ItemsControl ic)
+            {
+                int idx = ic.IndexFromContainer(treeItem);
+                if (idx >= 0 && idx + 1 < ic.ItemCount)
+                {
+                    if (ic.ContainerFromIndex(idx + 1) is TreeViewItem nextRow)
+                    {
+                        var nextName = nextRow.FindDescendantOfType<TextBox>();
+                        nextName?.Focus();
+                    }
+                }
+            }
+        }
+    }
 
     // Insert into the currently-selected group VM's Children. Falls through
     // to the root collection when nothing (or a leaf) is selected. The

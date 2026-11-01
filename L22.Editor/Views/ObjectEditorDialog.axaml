@@ -13,15 +13,16 @@
                 <TextBlock Name="LblSubject" Text="Object" Foreground="#DDD" FontSize="14" FontWeight="SemiBold"/>
                 <Grid ColumnDefinitions="110,*" ColumnSpacing="8">
                     <TextBlock Text="Display name:" Foreground="#AAA" FontSize="11" VerticalAlignment="Center"/>
-                    <TextBox Name="TxtDisplayName" Grid.Column="1"/>
+                    <TextBox Name="TxtDisplayName" Grid.Column="1" TabIndex="1" KeyDown="OnFieldKeyDown"/>
                 </Grid>
                 <Grid ColumnDefinitions="110,*" ColumnSpacing="8">
                     <TextBlock Name="LblCodeName" Text="Code name:" Foreground="#AAA" FontSize="11" VerticalAlignment="Center"/>
-                    <TextBox Name="TxtCodeName" Grid.Column="1"/>
+                    <TextBox Name="TxtCodeName" Grid.Column="1" TabIndex="2" KeyDown="OnFieldKeyDown"/>
                 </Grid>
                 <Grid Name="GridPrefabPicker" ColumnDefinitions="110,*,Auto,Auto" ColumnSpacing="6" IsVisible="False">
                     <TextBlock Text="Prefab:" Foreground="#AAA" FontSize="11" VerticalAlignment="Center"/>
                     <AutoCompleteBox Name="CbPrefabPicker" Grid.Column="1" FontSize="11"
+                                     TabIndex="3"
                                      MinimumPrefixLength="0"
                                      IsTextCompletionEnabled="True"
                                      FilterMode="Contains"
@@ -77,10 +78,10 @@
                                     <TextBlock Text="{Binding Kind}" FontSize="10" Foreground="#CCC"
                                                VerticalAlignment="Center" HorizontalAlignment="Center"/>
                                 </Border>
-                                <TextBox Text="{Binding Name, Mode=TwoWay}" Width="140" FontSize="11"
-                                         Watermark="name"/>
-                                <TextBox Text="{Binding ValueDisplay, Mode=TwoWay}" Width="220" FontSize="11"
-                                         Watermark="value"/>
+                                <TextBox Tag="name" Text="{Binding Name, Mode=TwoWay}" Width="140" FontSize="11"
+                                         Watermark="name" KeyDown="OnTreeRowKeyDown"/>
+                                <TextBox Tag="value" Text="{Binding ValueDisplay, Mode=TwoWay}" Width="220" FontSize="11"
+                                         Watermark="value" KeyDown="OnTreeRowKeyDown"/>
                             </StackPanel>
                         </TreeDataTemplate>
                     </TreeView.ItemTemplate>
