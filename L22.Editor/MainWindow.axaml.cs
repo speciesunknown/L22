@@ -107,6 +107,8 @@ public partial class MainWindow : Window
         EditViewport.ObjectEditRequested += OnObjectEditFromViewport;
         EditViewport.RiverVertexAddRequested += OnRiverVertexAddRequested;
         EditViewport.RiverVertexSelectRequested += OnRiverVertexSelectRequested;
+        EditViewport.RiverHandleDragPreview += OnRiverHandleDragPreview;
+        EditViewport.RiverHandleDragRelease += OnRiverHandleDragRelease;
         SlRiverWidth.ValueChanged += OnRiverWidthSliderChanged;
 
         RegisterSliderBinding(SlRadius,    LblRadius,    TxtRadius,    v => { if (ViewModel.Brush is { } b) b.Radius = (int)Math.Round(v); }, v => ((int)Math.Round(v)).ToString());
@@ -780,6 +782,29 @@ public partial class MainWindow : Window
         if (!anyChanged) return;  // all vertices already at target
     }
 
+    private void OnRiverHandleDragPreview(string riverId, int index, float x, float y)
+    {
+        // Model is already mutated by the viewport mid-drag; just repaint
+        // the overlay so the preview tracks the cursor without waiting
+        // for the 60ms DispatcherTimer.
+        RefreshRiverOverlay();
+    }
+
+    private void OnRiverHandleDragRelease(string riverId, int index, float x, float y)
+    {
+        var ctx = ViewModel.Active?.Context;
+        if (ctx is null) return;
+        var r = FindRiverRecursive(ctx, riverId);
+        if (r is null || index < 0 || index >= r.Vertices.Count) return;
+        var before = r.Vertices[index].BezierHandleOut;
+        var after = new System.Numerics.Vector2(x, y);
+        if (System.Math.Abs(before.X - after.X) < 1e-4f && System.Math.Abs(before.Y - after.Y) < 1e-4f)
+            return;
+        var cmd = new L22.Editor.Models.Commands.SetRiverVertexHandleCommand(
+            ctx, riverId, index, before, after);
+        ctx.History.ExecuteAndPush(cmd);
+    }
+
     // Local flow direction at a river vertex: tangent at index i. If i is
     // the last vertex, falls back to (vi - vi-1); if first, (vi+1 - vi).
     // Scale is tiny — this feeds a BezierHandleOut, which is a short
@@ -900,10 +925,9 @@ public partial class MainWindow : Window
         }
         // Draw each vertex handle as a filled square at the centre, plus a
         // ring whose radius equals the vertex's width/2 in world units
-        // (journey: "its radius from the centre is its weighting"). The
-        // ring is an octagon — StreamGeometryContext has no primitive
-        // circle in Avalonia's drawing-context API, so we fake it with
-        // 8 line segments.
+        // (journey: "its radius from the centre is its weighting"). A
+        // small filled square at vertex + BezierHandleOut is the draggable
+        // bezier direction handle.
         foreach (var v in r.Vertices)
         {
             var p = toScreen(v.WorldX, v.WorldZ);
@@ -922,6 +946,21 @@ public partial class MainWindow : Window
                 ctx.LineTo(new Point(p.X + rPx * Math.Cos(ang), p.Y + rPx * Math.Sin(ang)));
             }
             ctx.EndFigure(isClosed: false);
+
+            // Bezier out-handle: a small filled square at the handle tip,
+            // plus a line from vertex centre so the direction is visually
+            // obvious.
+            float hx = v.WorldX + v.BezierHandleOut.X;
+            float hz = v.WorldZ + v.BezierHandleOut.Y;
+            var hp = toScreen(hx, hz);
+            ctx.BeginFigure(p, isFilled: false);
+            ctx.LineTo(hp);
+            ctx.EndFigure(isClosed: false);
+            ctx.BeginFigure(new Point(hp.X - 3, hp.Y - 3), isFilled: true);
+            ctx.LineTo(new Point(hp.X + 3, hp.Y - 3));
+            ctx.LineTo(new Point(hp.X + 3, hp.Y + 3));
+            ctx.LineTo(new Point(hp.X - 3, hp.Y + 3));
+            ctx.EndFigure(isClosed: true);
         }
         foreach (var b in r.Branches) WalkRiver(ctx, b, toScreen, worldToScreen);
     }

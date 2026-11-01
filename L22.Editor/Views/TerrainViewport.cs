@@ -68,6 +68,15 @@ public class TerrainViewport : OpenGlControlBase
     // (riverId, vertexIndex, addToSelection) so MainWindow can set it as
     // the selection or append to the running multi-select set.
     public event Action<string, int, bool>? RiverVertexSelectRequested;
+    // Journey update: bezier handle drag. Live preview on move; the final
+    // commit (and undo entry) lands on release.
+    public event Action<string, int, float, float>? RiverHandleDragPreview;
+    public event Action<string, int, float, float>? RiverHandleDragRelease;
+
+    private bool _riverHandleDragging;
+    private string? _riverHandleRiverId;
+    private int _riverHandleIndex;
+    private System.Numerics.Vector2 _riverHandleBefore;
 
     // Place-object tool: a click (no drag) drops a new ObjectInstance at
     // the picked cell; a drag rubber-bands a selection over objects in
@@ -602,11 +611,25 @@ public class TerrainViewport : OpenGlControlBase
         }
         if (props.IsLeftButtonPressed && RiverToolActive && TopDown)
         {
-            // Fine-grained world point so sub-cell insets land where the
-            // user actually clicked.
             var wp = PickWorldPoint(pos);
             if (wp is { } p)
             {
+                // Handle hit takes precedence over vertex-centre hit, so
+                // grabbing the little bezier marker never gets stolen by
+                // the parent vertex selection.
+                var handleHit = PickRiverHandle(p.x, p.y);
+                if (handleHit.HasValue)
+                {
+                    var r = FindRiverAnywhere(handleHit.Value.riverId);
+                    if (r is not null && handleHit.Value.index >= 0 && handleHit.Value.index < r.Vertices.Count)
+                    {
+                        _riverHandleDragging = true;
+                        _riverHandleRiverId = handleHit.Value.riverId;
+                        _riverHandleIndex = handleHit.Value.index;
+                        _riverHandleBefore = r.Vertices[handleHit.Value.index].BezierHandleOut;
+                        return;
+                    }
+                }
                 var hit = PickRiverVertex(p.x, p.y);
                 bool shift = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
                 if (hit.HasValue)
@@ -674,6 +697,24 @@ public class TerrainViewport : OpenGlControlBase
             double x1 = Math.Max(_boxStart.X, pos.X), y1 = Math.Max(_boxStart.Y, pos.Y);
             BoxSelectRect = new Avalonia.Rect(x0, y0, x1 - x0, y1 - y0);
             BoxSelectVisualChanged?.Invoke();
+            return;
+        }
+
+        if (_riverHandleDragging && _riverHandleRiverId is not null)
+        {
+            var wp = PickWorldPoint(pos);
+            if (wp is { } p)
+            {
+                var r = FindRiverAnywhere(_riverHandleRiverId);
+                if (r is not null && _riverHandleIndex >= 0 && _riverHandleIndex < r.Vertices.Count)
+                {
+                    var v = r.Vertices[_riverHandleIndex];
+                    float dx = p.x - v.WorldX;
+                    float dz = p.y - v.WorldZ;
+                    v.BezierHandleOut = new System.Numerics.Vector2(dx, dz);
+                    RiverHandleDragPreview?.Invoke(_riverHandleRiverId, _riverHandleIndex, dx, dz);
+                }
+            }
             return;
         }
 
@@ -747,6 +788,24 @@ public class TerrainViewport : OpenGlControlBase
             BoxSelectRect = null;
             BoxSelectVisualChanged?.Invoke();
             RequestFrame();
+        }
+        if (_riverHandleDragging && e.InitialPressMouseButton == MouseButton.Left)
+        {
+            _riverHandleDragging = false;
+            if (_riverHandleRiverId is not null)
+            {
+                var r = FindRiverAnywhere(_riverHandleRiverId);
+                if (r is not null && _riverHandleIndex >= 0 && _riverHandleIndex < r.Vertices.Count)
+                {
+                    var after = r.Vertices[_riverHandleIndex].BezierHandleOut;
+                    // Reset to before so the command's Execute lands the
+                    // after value through the normal path — keeps the undo
+                    // record coherent.
+                    r.Vertices[_riverHandleIndex].BezierHandleOut = _riverHandleBefore;
+                    RiverHandleDragRelease?.Invoke(_riverHandleRiverId, _riverHandleIndex, after.X, after.Y);
+                }
+            }
+            _riverHandleRiverId = null;
         }
         if (_objectGesturePressed && e.InitialPressMouseButton == MouseButton.Left)
         {
@@ -904,6 +963,54 @@ public class TerrainViewport : OpenGlControlBase
         if (t < 0) return null;
         var hit = origin + dir * t;
         return (hit.X, hit.Z);
+    }
+
+    // Local lookup for the river tree — mirrors MainWindow's helper so
+    // the viewport can resolve a riverId without a round-trip event.
+    private River? FindRiverAnywhere(string id)
+    {
+        if (Rivers is null) return null;
+        foreach (var r in Rivers)
+        {
+            var hit = FindRecursive(r, id);
+            if (hit is not null) return hit;
+        }
+        return null;
+    }
+    private static River? FindRecursive(River r, string id)
+    {
+        if (r.Id == id) return r;
+        foreach (var b in r.Branches)
+        {
+            var hit = FindRecursive(b, id);
+            if (hit is not null) return hit;
+        }
+        return null;
+    }
+
+    // Nearest river handle marker within RiverHandlePickRadius world
+    // units. Handle world position = vertex + BezierHandleOut.
+    private const float RiverHandlePickRadius = 0.9f;
+    private (string riverId, int index)? PickRiverHandle(float wx, float wz)
+    {
+        if (Rivers is null) return null;
+        (string, int)? best = null;
+        float bestD2 = RiverHandlePickRadius * RiverHandlePickRadius;
+        foreach (var r in Rivers) PickRiverHandleIn(r, wx, wz, ref bestD2, ref best);
+        return best;
+    }
+    private static void PickRiverHandleIn(River r, float wx, float wz, ref float bestD2, ref (string, int)? best)
+    {
+        for (int i = 0; i < r.Vertices.Count; i++)
+        {
+            var v = r.Vertices[i];
+            float hx = v.WorldX + v.BezierHandleOut.X;
+            float hz = v.WorldZ + v.BezierHandleOut.Y;
+            float dx = hx - wx, dz = hz - wz;
+            float d2 = dx * dx + dz * dz;
+            if (d2 <= bestD2) { bestD2 = d2; best = (r.Id, i); }
+        }
+        foreach (var b in r.Branches) PickRiverHandleIn(b, wx, wz, ref bestD2, ref best);
     }
 
     // Nearest river vertex within max(RiverPickRadius, width/2) world

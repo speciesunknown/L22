@@ -94,6 +94,56 @@ public sealed class AddBranchCommand : IEditorCommand
     }
 }
 
+// Journey update: dragging a vertex's handle updates its bezier out
+// direction. Width stays separate — the slider owns that.
+public sealed class SetRiverVertexHandleCommand : IEditorCommand
+{
+    private readonly EditorContext _ctx;
+    private readonly string _riverId;
+    private readonly int _index;
+    private readonly System.Numerics.Vector2 _before, _after;
+    public string Name => "Set river vertex handle";
+
+    public SetRiverVertexHandleCommand(EditorContext ctx, string riverId, int index,
+                                        System.Numerics.Vector2 before, System.Numerics.Vector2 after)
+    {
+        _ctx = ctx; _riverId = riverId; _index = index; _before = before; _after = after;
+    }
+    public void Execute(World.World world)
+    {
+        var r = FindAnywhere(_ctx, _riverId);
+        if (r is null || _index < 0 || _index >= r.Vertices.Count) return;
+        r.Vertices[_index].BezierHandleOut = _after;
+        _ctx.RaiseRiversChanged();
+    }
+    public void Undo(World.World world)
+    {
+        var r = FindAnywhere(_ctx, _riverId);
+        if (r is null || _index < 0 || _index >= r.Vertices.Count) return;
+        r.Vertices[_index].BezierHandleOut = _before;
+        _ctx.RaiseRiversChanged();
+    }
+    private static River? FindAnywhere(EditorContext ctx, string id)
+    {
+        foreach (var r in ctx.Rivers)
+        {
+            var hit = Recurse(r, id);
+            if (hit is not null) return hit;
+        }
+        return null;
+    }
+    private static River? Recurse(River r, string id)
+    {
+        if (r.Id == id) return r;
+        foreach (var b in r.Branches)
+        {
+            var hit = Recurse(b, id);
+            if (hit is not null) return hit;
+        }
+        return null;
+    }
+}
+
 // Scenario 3: increase the width of the selected vertex changes that
 // node *and its two neighbours*. The neighbour effect is at half the
 // delta so the taper is smooth.
