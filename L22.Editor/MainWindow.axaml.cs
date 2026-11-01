@@ -130,6 +130,71 @@ public partial class MainWindow : Window
 
         ViewModel.PropertyChanged += (_, _) => UpdateWindowTitle();
         UpdateWindowTitle();
+
+        // Restore last session's window geometry; defer the actual Set
+        // until the first Opened so the screen bounds the window picks
+        // up match where it's actually going to live.
+        Opened += OnWindowOpenedRestoreState;
+        Closing += OnWindowClosingPersistState;
+    }
+
+    private const string StateKeyPosX   = "window.posX";
+    private const string StateKeyPosY   = "window.posY";
+    private const string StateKeyWidth  = "window.width";
+    private const string StateKeyHeight = "window.height";
+    private const string StateKeyState  = "window.state";
+
+    private void OnWindowOpenedRestoreState(object? sender, EventArgs e)
+    {
+        var kv = Models.WindowStateStore.LoadAll();
+        // Size first — otherwise maximised-then-normalised will restore to
+        // the designer default rather than whatever the user last had.
+        if (kv.TryGetValue(StateKeyWidth, out var ws) && double.TryParse(ws, System.Globalization.CultureInfo.InvariantCulture, out var w) && w > 100)
+            Width = w;
+        if (kv.TryGetValue(StateKeyHeight, out var hs) && double.TryParse(hs, System.Globalization.CultureInfo.InvariantCulture, out var h) && h > 100)
+            Height = h;
+        if (kv.TryGetValue(StateKeyPosX, out var xs) && int.TryParse(xs, out var x)
+            && kv.TryGetValue(StateKeyPosY, out var ys) && int.TryParse(ys, out var y))
+        {
+            Position = new PixelPoint(x, y);
+        }
+        if (kv.TryGetValue(StateKeyState, out var st) && Enum.TryParse<WindowState>(st, out var ws2))
+        {
+            // Only honour Normal / Maximized — Minimized on startup is a
+            // UX pit.
+            if (ws2 == WindowState.Maximized || ws2 == WindowState.Normal)
+                WindowState = ws2;
+        }
+    }
+
+    private void OnWindowClosingPersistState(object? sender, Avalonia.Controls.WindowClosingEventArgs e)
+    {
+        // Capture *restoreBounds* when maximised: Position / Width / Height
+        // report the maximised cover, which would make the next session's
+        // Normal state cover the whole screen.
+        bool maximised = WindowState == WindowState.Maximized;
+        var pos = Position;
+        double saveW = Width;
+        double saveH = Height;
+        if (maximised)
+        {
+            // Avalonia doesn't surface RestoreBounds directly; fall back to
+            // whatever we had saved last time by not overwriting the X/Y/W/H
+            // keys. The State key is enough to reopen maximised.
+            Models.WindowStateStore.Save(new Dictionary<string, string>
+            {
+                [StateKeyState] = WindowState.ToString(),
+            });
+            return;
+        }
+        Models.WindowStateStore.Save(new Dictionary<string, string>
+        {
+            [StateKeyPosX]   = pos.X.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            [StateKeyPosY]   = pos.Y.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            [StateKeyWidth]  = saveW.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            [StateKeyHeight] = saveH.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            [StateKeyState]  = WindowState.ToString(),
+        });
     }
 
     private void BuildToolCursors()
