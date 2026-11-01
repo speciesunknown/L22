@@ -252,8 +252,16 @@ public class TerrainViewport : OpenGlControlBase
 
         EnforceTopDown();
 
-        int w = Math.Max(1, (int)Bounds.Width);
-        int h = Math.Max(1, (int)Bounds.Height);
+        // Avalonia's OpenGlControlBase hands us a framebuffer sized to the
+        // control's *physical* pixel area (Bounds × RenderScaling). On a
+        // HiDPI monitor passing just Bounds to gl.Viewport renders into
+        // the bottom-left corner of the FB and leaves the rest black — but
+        // the composited result ends up stretched over the whole control,
+        // so cursor positions (reported in DIPs) stop matching world cells.
+        // Scale here fixes both rendering coverage and pointer hit tests.
+        double rs = Avalonia.Controls.TopLevel.GetTopLevel(this)?.RenderScaling ?? 1.0;
+        int w = Math.Max(1, (int)(Bounds.Width * rs));
+        int h = Math.Max(1, (int)(Bounds.Height * rs));
         float aspect = (float)w / h;
 
         gl.BindFramebuffer(GL_FRAMEBUFFER, fb);
