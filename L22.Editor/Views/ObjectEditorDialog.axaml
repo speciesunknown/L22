@@ -71,9 +71,19 @@
         <Border Margin="12,0,12,8" BorderBrush="#2A2E36" BorderThickness="1" Background="#1C1F26">
             <ScrollViewer>
                 <TreeView Name="PropTree" Background="Transparent" BorderThickness="0">
+                    <TreeView.Styles>
+                        <!-- Hover-pointer cursor on the expand chevron (journey
+                             008 scenario 1). ToggleButton inside TreeViewItem's
+                             template is the chevron. -->
+                        <Style Selector="TreeViewItem /template/ ToggleButton">
+                            <Setter Property="Cursor" Value="Hand"/>
+                        </Style>
+                    </TreeView.Styles>
                     <TreeView.ItemTemplate>
                         <TreeDataTemplate DataType="vm:PropertyNodeVm" ItemsSource="{Binding Children}">
-                            <StackPanel Orientation="Horizontal" Spacing="6" Margin="2,1">
+                            <StackPanel Orientation="Horizontal" Spacing="6" Margin="2,1"
+                                        Background="Transparent"
+                                        PointerPressed="OnRowPressed">
                                 <Border Background="#2B303A" CornerRadius="2" Padding="4,2" MinWidth="60">
                                     <TextBlock Text="{Binding Kind}" FontSize="10" Foreground="#CCC"
                                                VerticalAlignment="Center" HorizontalAlignment="Center"/>

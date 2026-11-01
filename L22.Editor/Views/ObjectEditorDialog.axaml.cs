@@ -236,6 +236,24 @@ public partial class ObjectEditorDialog : Window
         foreach (var r in _roots) r.RaiseSiblingMoveFlags();
     }
 
+    // Journey 008 scenario 2: pressing anywhere on a group row (that isn't
+    // an interactive child like a TextBox or Button) toggles the TreeViewItem.
+    // Leaf rows are no-ops.
+    private void OnRowPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (e.Source is Control src)
+        {
+            if (src is TextBox or Button) return;
+            if (src.FindAncestorOfType<TextBox>() is not null) return;
+            if (src.FindAncestorOfType<Button>() is not null) return;
+        }
+        if (sender is not StackPanel sp) return;
+        if (sp.DataContext is not PropertyNodeVm vm) return;
+        if (!vm.IsGroup || vm.Children.Count == 0) return;
+        var tvi = sp.FindAncestorOfType<TreeViewItem>();
+        if (tvi is not null) tvi.IsExpanded = !tvi.IsExpanded;
+    }
+
     private void OnMoveNodeUp(object? sender, RoutedEventArgs e)
     {
         if (sender is Control c && c.DataContext is PropertyNodeVm vm) vm.MoveUp();
