@@ -331,9 +331,13 @@
                 </TabControl>
                 <Grid ColumnDefinitions="*,4,*">
             <Border Grid.Column="0" BorderBrush="#444" BorderThickness="0,0,1,0" Background="#101216">
-                <Grid Name="EditViewportHost" Background="Transparent">
+                <!-- ClipToBounds=True on both the host Grid and the overlay
+                     Canvas — Avalonia defaults to False (same as WPF), so
+                     river rings / halos / brush cursors spill past the
+                     viewport into the right panel without this. -->
+                <Grid Name="EditViewportHost" Background="Transparent" ClipToBounds="True">
                     <views:TerrainViewport Name="EditViewport"/>
-                    <Canvas IsHitTestVisible="False">
+                    <Canvas IsHitTestVisible="False" ClipToBounds="True">
                         <shapes:Rectangle Name="RubberBand" IsVisible="False"
                                           Stroke="#FFFF66AA" StrokeThickness="1"
                                           Fill="#33FF66AA"/>
@@ -385,7 +389,7 @@
             </Border>
             <GridSplitter Grid.Column="1" Background="#333" ResizeDirection="Columns"/>
             <Border Grid.Column="2" Background="#101216">
-                <Grid Name="FreeViewportHost" Background="Transparent">
+                <Grid Name="FreeViewportHost" Background="Transparent" ClipToBounds="True">
                     <views:TerrainViewport Name="FreeViewport"/>
                     <TextBlock Text="3D preview (WASD · R/F · right-drag rotate)"
                                Foreground="#99FFFFFF"
