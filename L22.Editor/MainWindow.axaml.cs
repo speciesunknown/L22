@@ -937,7 +937,9 @@ public partial class MainWindow : Window
             ctx.LineTo(new Point(p.X - 3, p.Y + 3));
             ctx.EndFigure(isClosed: true);
 
-            double rPx = Math.Max(2, v.WidthWorld * 0.5 * worldToScreen);
+            // 5 px floor so the ring stays distinct from the 3-px vertex
+            // square at zoom-out levels — otherwise the two visually merge.
+            double rPx = Math.Max(5, v.WidthWorld * 0.5 * worldToScreen);
             const int segs = 16;
             ctx.BeginFigure(new Point(p.X + rPx, p.Y), isFilled: false);
             for (int i = 1; i <= segs; i++)

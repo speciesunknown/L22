@@ -113,6 +113,26 @@ static class Program
                 op = "prefab-delete",
                 id = kv["--id"],
             },
+            "river-list" => new { op = "river-list" },
+            "river-create" => new
+            {
+                op = "river-create",
+                id = kv.GetValueOrDefault("--id"),
+                name = kv.GetValueOrDefault("--name"),
+            },
+            "river-add-vertex" => new
+            {
+                op = "river-add-vertex",
+                id = kv["--id"],
+                worldX = double.Parse(kv["--world-x"], System.Globalization.CultureInfo.InvariantCulture),
+                worldZ = double.Parse(kv["--world-z"], System.Globalization.CultureInfo.InvariantCulture),
+                width = kv.ContainsKey("--width") ? double.Parse(kv["--width"], System.Globalization.CultureInfo.InvariantCulture) : (double?)null,
+            },
+            "river-delete" => new
+            {
+                op = "river-delete",
+                id = kv["--id"],
+            },
             _ => null,
         };
         if (req is null) { Console.Error.WriteLine($"unknown verb '{verb}'"); PrintUsage(); return 2; }
@@ -169,5 +189,9 @@ static class Program
           prefab-list
           prefab-upsert [--id ID] [--display-name NAME] [--foreign-id KEY]
           prefab-delete --id ID
+          river-list
+          river-create [--id ID] [--name NAME]
+          river-add-vertex --id RIVER_ID --world-x X --world-z Z [--width W]
+          river-delete --id ID
         """);
 }

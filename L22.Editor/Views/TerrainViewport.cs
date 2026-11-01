@@ -1001,11 +1001,18 @@ public class TerrainViewport : OpenGlControlBase
     }
     private static void PickRiverHandleIn(River r, float wx, float wz, ref float bestD2, ref (string, int)? best)
     {
+        // Skip handles with a near-zero out vector: their tip overlaps the
+        // vertex centre and would silently steal the first click on a
+        // freshly-added vertex. The user needs to be able to select the
+        // vertex before they can tweak its direction.
+        const float minHandleMag2 = 0.25f * 0.25f;
         for (int i = 0; i < r.Vertices.Count; i++)
         {
             var v = r.Vertices[i];
-            float hx = v.WorldX + v.BezierHandleOut.X;
-            float hz = v.WorldZ + v.BezierHandleOut.Y;
+            var h = v.BezierHandleOut;
+            if (h.X * h.X + h.Y * h.Y < minHandleMag2) continue;
+            float hx = v.WorldX + h.X;
+            float hz = v.WorldZ + h.Y;
             float dx = hx - wx, dz = hz - wz;
             float d2 = dx * dx + dz * dz;
             if (d2 <= bestD2) { bestD2 = d2; best = (r.Id, i); }

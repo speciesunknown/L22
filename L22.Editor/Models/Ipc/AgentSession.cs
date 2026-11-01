@@ -213,6 +213,10 @@ public sealed class AgentSession
             case "prefab-list":
             case "prefab-upsert":
             case "prefab-delete":
+            case "river-list":
+            case "river-create":
+            case "river-add-vertex":
+            case "river-delete":
             {
                 var ctx = _control.GetActiveContext();
                 if (ctx is null) return new ServerResponse { Op = "error", Msg = "no active document" };
@@ -252,8 +256,92 @@ public sealed class AgentSession
                 return ExecutePrefabUpsert(ctx, cmd);
             case "prefab-delete":
                 return ExecutePrefabDelete(ctx, cmd);
+            case "river-list":
+                return ExecuteRiverList(ctx);
+            case "river-create":
+                return ExecuteRiverCreate(ctx, cmd);
+            case "river-add-vertex":
+                return ExecuteRiverAddVertex(ctx, cmd);
+            case "river-delete":
+                return ExecuteRiverDelete(ctx, cmd);
         }
         return new ServerResponse { Op = "error", Msg = $"unknown doc op '{cmd.Op}'" };
+    }
+
+    private static ServerResponse ExecuteRiverList(EditorContext ctx)
+    {
+        var list = new System.Collections.Generic.List<RiverInfo>();
+        foreach (var r in ctx.Rivers)
+            list.Add(new RiverInfo(r.Id, r.Name, r.Vertices.Count, r.Branches.Count));
+        return new ServerResponse { Op = "ok", Rivers = list.ToArray() };
+    }
+
+    private static ServerResponse ExecuteRiverCreate(EditorContext ctx, CommandRequest cmd)
+    {
+        var river = new Models.Rivers.River
+        {
+            Id = string.IsNullOrEmpty(cmd.Id) ? System.Guid.NewGuid().ToString("N") : cmd.Id!,
+            Name = string.IsNullOrEmpty(cmd.Name) ? $"River {ctx.Rivers.Count + 1}" : cmd.Name!,
+        };
+        var addCmd = new Models.Commands.AddRiverCommand(ctx, river);
+        ctx.History.ExecuteAndPush(addCmd);
+        return new ServerResponse { Op = "ok", Id = river.Id };
+    }
+
+    private static ServerResponse ExecuteRiverAddVertex(EditorContext ctx, CommandRequest cmd)
+    {
+        if (string.IsNullOrEmpty(cmd.Id))
+            return new ServerResponse { Op = "error", Msg = "river-add-vertex requires id" };
+        if (!cmd.WorldX.HasValue || !cmd.WorldZ.HasValue)
+            return new ServerResponse { Op = "error", Msg = "river-add-vertex requires worldX,worldZ" };
+        var r = FindRiverAnywhere(ctx, cmd.Id!);
+        if (r is null)
+            return new ServerResponse { Op = "error", Msg = $"no river with id '{cmd.Id}'" };
+        float wx = (float)cmd.WorldX.Value;
+        float wz = (float)cmd.WorldZ.Value;
+        int cx = (int)System.Math.Floor(wx);
+        int cy = (int)System.Math.Floor(wz);
+        var vertex = new Models.Rivers.RiverVertex
+        {
+            CellX = cx, CellY = cy,
+            SubCellX = wx - cx, SubCellY = wz - cy,
+            WidthWorld = (float)(cmd.WidthWorld ?? 1.0),
+        };
+        var vCmd = new Models.Commands.AddRiverVertexCommand(ctx, r.Id, vertex);
+        ctx.History.ExecuteAndPush(vCmd);
+        return new ServerResponse { Op = "ok", Id = r.Id };
+    }
+
+    private static ServerResponse ExecuteRiverDelete(EditorContext ctx, CommandRequest cmd)
+    {
+        if (string.IsNullOrEmpty(cmd.Id))
+            return new ServerResponse { Op = "error", Msg = "river-delete requires id" };
+        var r = ctx.Rivers.Find(x => x.Id == cmd.Id);
+        if (r is null)
+            return new ServerResponse { Op = "error", Msg = $"no top-level river with id '{cmd.Id}'" };
+        var del = new Models.Commands.DeleteRiverCommand(ctx, r);
+        ctx.History.ExecuteAndPush(del);
+        return new ServerResponse { Op = "ok", Id = r.Id };
+    }
+
+    private static Models.Rivers.River? FindRiverAnywhere(EditorContext ctx, string id)
+    {
+        foreach (var r in ctx.Rivers)
+        {
+            var hit = Recurse(r, id);
+            if (hit is not null) return hit;
+        }
+        return null;
+    }
+    private static Models.Rivers.River? Recurse(Models.Rivers.River r, string id)
+    {
+        if (r.Id == id) return r;
+        foreach (var b in r.Branches)
+        {
+            var hit = Recurse(b, id);
+            if (hit is not null) return hit;
+        }
+        return null;
     }
 
     private static ServerResponse ExecuteObjectList(EditorContext ctx)

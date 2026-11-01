@@ -29,6 +29,7 @@ public sealed class ServerResponse
     // Object ops: list returns objects; place returns the new id.
     [JsonPropertyName("objects")] public ObjectInfo[]? Objects { get; set; }
     [JsonPropertyName("prefabs")] public PrefabInfo[]? Prefabs { get; set; }
+    [JsonPropertyName("rivers")]  public RiverInfo[]? Rivers { get; set; }
     [JsonPropertyName("id")] public string? Id { get; set; }
     // Persistent hex code the agent should remember and present as `token`
     // on future connections to skip the PIN dialog.
@@ -46,6 +47,12 @@ public sealed record PrefabInfo(
     [property: JsonPropertyName("id")] string Id,
     [property: JsonPropertyName("displayName")] string DisplayName,
     [property: JsonPropertyName("foreignId")] string ForeignId);
+
+public sealed record RiverInfo(
+    [property: JsonPropertyName("id")] string Id,
+    [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("vertexCount")] int VertexCount,
+    [property: JsonPropertyName("branchCount")] int BranchCount);
 
 public sealed class CommandRequest
 {
@@ -73,4 +80,12 @@ public sealed class CommandRequest
     // Prefab ops:
     [JsonPropertyName("displayName")] public string? DisplayName { get; set; }
     [JsonPropertyName("foreignId")]   public string? ForeignId { get; set; }
+
+    // River ops. Reuses `id` / `name`. For river-add-vertex, (worldX,
+    // worldZ) place the vertex via the same path the editor's click
+    // handler uses; `width` sets WidthWorld.
+    [JsonPropertyName("name")]   public string? Name { get; set; }
+    [JsonPropertyName("worldX")] public double? WorldX { get; set; }
+    [JsonPropertyName("worldZ")] public double? WorldZ { get; set; }
+    [JsonPropertyName("width")]  public double? WidthWorld { get; set; }
 }
