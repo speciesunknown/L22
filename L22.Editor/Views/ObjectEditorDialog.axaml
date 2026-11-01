@@ -18,13 +18,28 @@
                     <TextBlock Name="LblCodeName" Text="Code name:" Foreground="#AAA" FontSize="11" VerticalAlignment="Center"/>
                     <TextBox Name="TxtCodeName" Grid.Column="1"/>
                 </Grid>
-                <Grid Name="GridPrefabPicker" ColumnDefinitions="110,*,Auto" ColumnSpacing="8" IsVisible="False">
+                <Grid Name="GridPrefabPicker" ColumnDefinitions="110,*,Auto,Auto" ColumnSpacing="6" IsVisible="False">
                     <TextBlock Text="Prefab:" Foreground="#AAA" FontSize="11" VerticalAlignment="Center"/>
                     <AutoCompleteBox Name="CbPrefabPicker" Grid.Column="1" FontSize="11"
                                      MinimumPrefixLength="0"
-                                     FilterMode="ContainsOrdinalCaseSensitive"
-                                     Watermark="(no prefab) · type to search"/>
-                    <Button Name="BtnEditPrefab" Grid.Column="2" Content="Edit…" Click="OnEditPrefabFromDialog"
+                                     IsTextCompletionEnabled="True"
+                                     FilterMode="Contains"
+                                     GotFocus="OnPrefabPickerFocus"
+                                     PlaceholderText="(no prefab) · type to search">
+                        <AutoCompleteBox.ItemTemplate>
+                            <DataTemplate DataType="objects:ObjectPrefab">
+                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                    <TextBlock Text="{Binding DisplayName}" Foreground="#DDD" FontSize="11"
+                                               VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding ForeignIdentifier}"
+                                               Foreground="#888" FontSize="10" VerticalAlignment="Center"/>
+                                </Grid>
+                            </DataTemplate>
+                        </AutoCompleteBox.ItemTemplate>
+                    </AutoCompleteBox>
+                    <Button Grid.Column="2" Content="✕" Click="OnClearPrefabPicker" Padding="6,0"
+                            ToolTip.Tip="Clear prefab (object becomes orphan)"/>
+                    <Button Name="BtnEditPrefab" Grid.Column="3" Content="Edit…" Click="OnEditPrefabFromDialog"
                             IsVisible="False"/>
                 </Grid>
             </StackPanel>

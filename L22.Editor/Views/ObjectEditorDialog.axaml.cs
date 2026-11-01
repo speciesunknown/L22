@@ -34,7 +34,12 @@ public partial class ObjectEditorDialog : Window
         if (payload.ShowPrefabPicker)
         {
             GridPrefabPicker.IsVisible = true;
-            CbPrefabPicker.ItemsSource = payload.AvailablePrefabs;
+            // Sort by DisplayName so the dropdown is scannable regardless of
+            // what order PrefabLibrary enumerates them.
+            var sorted = new List<ObjectPrefab>(payload.AvailablePrefabs);
+            sorted.Sort((a, b) => string.Compare(a.DisplayName, b.DisplayName,
+                System.StringComparison.OrdinalIgnoreCase));
+            CbPrefabPicker.ItemsSource = sorted;
             CbPrefabPicker.ValueMemberBinding = new Avalonia.Data.Binding(nameof(ObjectPrefab.DisplayName));
             CbPrefabPicker.ItemFilter = (search, item) =>
             {
@@ -47,7 +52,7 @@ public partial class ObjectEditorDialog : Window
             };
             if (!string.IsNullOrEmpty(payload.SelectedPrefabId))
             {
-                foreach (var pf in payload.AvailablePrefabs)
+                foreach (var pf in sorted)
                 {
                     if (pf.Id == payload.SelectedPrefabId)
                     {
@@ -60,6 +65,21 @@ public partial class ObjectEditorDialog : Window
             CbPrefabPicker.SelectionChanged += (_, _) =>
                 BtnEditPrefab.IsVisible = CbPrefabPicker.SelectedItem is ObjectPrefab;
         }
+    }
+
+    // Open the dropdown as soon as the picker gets focus — users expect
+    // the full list on tab-in instead of having to type a character first.
+    private void OnPrefabPickerFocus(object? sender, RoutedEventArgs _)
+    {
+        if (CbPrefabPicker.ItemsSource is not null)
+            CbPrefabPicker.IsDropDownOpen = true;
+    }
+
+    private void OnClearPrefabPicker(object? sender, RoutedEventArgs e)
+    {
+        CbPrefabPicker.SelectedItem = null;
+        CbPrefabPicker.Text = "";
+        BtnEditPrefab.IsVisible = false;
     }
 
     public static async Task<bool> ShowAsync(Window owner, ObjectEditorPayload payload)
