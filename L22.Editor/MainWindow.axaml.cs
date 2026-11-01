@@ -165,8 +165,30 @@ public partial class MainWindow : Window
         if (kv.TryGetValue(StateKeyPosX, out var xs) && int.TryParse(xs, out var x)
             && kv.TryGetValue(StateKeyPosY, out var ys) && int.TryParse(ys, out var y))
         {
+            // Journey 009: validate the saved position actually falls on
+            // one of the currently-connected monitors. Users move laptops
+            // between docks and the saved pixel can land on a monitor that
+            // no longer exists → window materialises off-screen. If none
+            // of today's screens contain the point, snap to the primary
+            // working area with a modest inset.
+            var pt = new PixelPoint(x, y);
+            bool onScreen = false;
+            if (Screens is { All: { Count: > 0 } all })
+            {
+                foreach (var s in all)
+                {
+                    var b = s.Bounds;
+                    if (pt.X >= b.X && pt.Y >= b.Y && pt.X < b.X + b.Width && pt.Y < b.Y + b.Height)
+                    { onScreen = true; break; }
+                }
+                if (!onScreen && Screens.Primary is { } primary)
+                {
+                    var wa = primary.WorkingArea;
+                    pt = new PixelPoint(wa.X + 60, wa.Y + 60);
+                }
+            }
             WindowStartupLocation = WindowStartupLocation.Manual;
-            Position = new PixelPoint(x, y);
+            Position = pt;
         }
         if (kv.TryGetValue(StateKeyState, out var st) && Enum.TryParse<WindowState>(st, out var ws2)
             && (ws2 == WindowState.Maximized || ws2 == WindowState.Normal))
@@ -1742,6 +1764,10 @@ public partial class MainWindow : Window
         EditViewport.RequestFrame();
         FreeViewport.RequestFrame();
     }
+
+    private void OnThemeDefault(object? s, RoutedEventArgs e) => App.SetTheme("default");
+    private void OnThemeDark(object? s, RoutedEventArgs e)    => App.SetTheme("dark");
+    private void OnThemeLight(object? s, RoutedEventArgs e)   => App.SetTheme("light");
 
     private void OnResetCameras(object? s, RoutedEventArgs e)
     {

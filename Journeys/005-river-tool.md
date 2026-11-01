@@ -55,3 +55,4 @@ THEN the current river becomes "no longer active"
 AND my next left-click on empty space starts a brand new river
 AND any multi-vertex selection is cleared
 
+

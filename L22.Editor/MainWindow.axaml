@@ -29,6 +29,12 @@
             </MenuItem>
             <MenuItem Header="_View">
                 <MenuItem Header="Reset Cameras" Click="OnResetCameras"/>
+                <Separator/>
+                <MenuItem Header="_Theme">
+                    <MenuItem Header="OS _Default" Click="OnThemeDefault"/>
+                    <MenuItem Header="_Dark"       Click="OnThemeDark"/>
+                    <MenuItem Header="_Light"      Click="OnThemeLight"/>
+                </MenuItem>
             </MenuItem>
         </Menu>
 

@@ -24,6 +24,33 @@ public partial class App : Application
     public override void Initialize()
     {
         AvaloniaXamlLoader.Load(this);
+        // Journey 009: apply persisted theme preference before the window
+        // comes up so there's no flash of default styling.
+        ApplyStoredTheme();
+    }
+
+    public const string ThemeSettingKey = "ui.theme";
+
+    public static void ApplyStoredTheme()
+    {
+        var kv = Models.WindowStateStore.LoadAll();
+        if (!kv.TryGetValue(ThemeSettingKey, out var val)) val = "default";
+        SetTheme(val);
+    }
+
+    public static void SetTheme(string name)
+    {
+        var variant = (name ?? "").ToLowerInvariant() switch
+        {
+            "dark"  => Avalonia.Styling.ThemeVariant.Dark,
+            "light" => Avalonia.Styling.ThemeVariant.Light,
+            _       => Avalonia.Styling.ThemeVariant.Default,
+        };
+        if (Current is not null) Current.RequestedThemeVariant = variant;
+        Models.WindowStateStore.Save(new System.Collections.Generic.Dictionary<string, string>
+        {
+            [ThemeSettingKey] = (name ?? "default").ToLowerInvariant(),
+        });
     }
 
     public override void OnFrameworkInitializationCompleted()
