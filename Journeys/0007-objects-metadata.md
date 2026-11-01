@@ -20,4 +20,4 @@ THEN I see a searchable dropdown to set the prefab
 GIVEN an object has a prefab
 WHEN I select it
 THEN it's prefab is selected
-AND I see an "Edit" button next to the selection.a
+AND I see an "Edit" button next to the selection.

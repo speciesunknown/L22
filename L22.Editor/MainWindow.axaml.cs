@@ -738,13 +738,6 @@ public partial class MainWindow : Window
         }
         PropertyTree.ItemsSource = inst.PropertyOverrides;
         PanPropertyEditor.IsVisible = false;
-
-        // Pan the top-down camera over the selected object. The 3D viewport
-        // keeps its current position so the user can frame the shot themselves.
-        EditViewport.Camera.Position = new System.Numerics.Vector3(
-            inst.CellX + 0.5f,
-            EditViewport.Camera.Position.Y,
-            inst.CellY + 0.5f);
         EditViewport.RequestFrame();
     }
 
