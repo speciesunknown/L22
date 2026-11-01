@@ -849,10 +849,12 @@ public partial class MainWindow : Window
             return new Point((sx + 1) * 0.5 * w, (1 - sy) * 0.5 * h);
         }
 
+        // Pixels per world unit for scaling the "radius = width" rings.
+        double worldToScreen = (h * 0.5) / halfH;
         var g = new StreamGeometry();
         using (var ctxDraw = g.Open())
         {
-            foreach (var r in ctx.Rivers) WalkRiver(ctxDraw, r, ToScreen);
+            foreach (var r in ctx.Rivers) WalkRiver(ctxDraw, r, ToScreen, worldToScreen);
         }
         RiverOverlay.Data = g;
 
@@ -885,8 +887,8 @@ public partial class MainWindow : Window
         }
     }
 
-    private static void WalkRiver(StreamGeometryContext ctx, L22.Editor.Models.Rivers.River r,
-                                   Func<float, float, Point> toScreen)
+    private void WalkRiver(StreamGeometryContext ctx, L22.Editor.Models.Rivers.River r,
+                            Func<float, float, Point> toScreen, double worldToScreen)
     {
         if (r.Vertices.Count >= 2)
         {
@@ -896,7 +898,12 @@ public partial class MainWindow : Window
                 ctx.LineTo(toScreen(r.Vertices[i].WorldX, r.Vertices[i].WorldZ));
             ctx.EndFigure(isClosed: false);
         }
-        // Dots for the vertex handles — tiny filled squares via a 2-px box.
+        // Draw each vertex handle as a filled square at the centre, plus a
+        // ring whose radius equals the vertex's width/2 in world units
+        // (journey: "its radius from the centre is its weighting"). The
+        // ring is an octagon — StreamGeometryContext has no primitive
+        // circle in Avalonia's drawing-context API, so we fake it with
+        // 8 line segments.
         foreach (var v in r.Vertices)
         {
             var p = toScreen(v.WorldX, v.WorldZ);
@@ -905,8 +912,18 @@ public partial class MainWindow : Window
             ctx.LineTo(new Point(p.X + 3, p.Y + 3));
             ctx.LineTo(new Point(p.X - 3, p.Y + 3));
             ctx.EndFigure(isClosed: true);
+
+            double rPx = Math.Max(2, v.WidthWorld * 0.5 * worldToScreen);
+            const int segs = 16;
+            ctx.BeginFigure(new Point(p.X + rPx, p.Y), isFilled: false);
+            for (int i = 1; i <= segs; i++)
+            {
+                double ang = (i / (double)segs) * Math.PI * 2;
+                ctx.LineTo(new Point(p.X + rPx * Math.Cos(ang), p.Y + rPx * Math.Sin(ang)));
+            }
+            ctx.EndFigure(isClosed: false);
         }
-        foreach (var b in r.Branches) WalkRiver(ctx, b, toScreen);
+        foreach (var b in r.Branches) WalkRiver(ctx, b, toScreen, worldToScreen);
     }
 
     private void OnSelectToolRiver(object? s, RoutedEventArgs e)

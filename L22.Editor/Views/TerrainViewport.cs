@@ -906,14 +906,16 @@ public class TerrainViewport : OpenGlControlBase
         return (hit.X, hit.Z);
     }
 
-    // Nearest river vertex within RiverPickRadius world units of (wx, wz).
-    // Walks branches recursively; returns the first hit (any river).
+    // Nearest river vertex within max(RiverPickRadius, width/2) world
+    // units of (wx, wz) — larger vertices are easier to grab, matching
+    // the "radius from the centre is its weighting" visual. Walks
+    // branches recursively; returns the first hit (any river).
     private const float RiverPickRadius = 2.0f;
     private (string riverId, int index)? PickRiverVertex(float wx, float wz)
     {
         if (Rivers is null) return null;
         (string, int)? best = null;
-        float bestD2 = RiverPickRadius * RiverPickRadius;
+        float bestD2 = float.MaxValue;
         foreach (var r in Rivers)
         {
             var hit = PickRiverVertexIn(r, wx, wz, ref bestD2);
@@ -930,7 +932,12 @@ public class TerrainViewport : OpenGlControlBase
             var v = r.Vertices[i];
             float dx = v.WorldX - wx, dz = v.WorldZ - wz;
             float d2 = dx * dx + dz * dz;
-            if (d2 <= bestD2) { bestD2 = d2; best = (r.Id, i); }
+            float reach = System.Math.Max(RiverPickRadius, v.WidthWorld * 0.5f);
+            if (d2 <= reach * reach && d2 <= bestD2)
+            {
+                bestD2 = d2;
+                best = (r.Id, i);
+            }
         }
         foreach (var b in r.Branches)
         {
