@@ -78,6 +78,22 @@ public class TerrainViewport : OpenGlControlBase
     private int _riverHandleIndex;
     private System.Numerics.Vector2 _riverHandleBefore;
 
+    // Vertex drag: a press on a vertex (not a handle) defers between
+    // click-to-select and drag-to-move until the pointer moves past a
+    // threshold. Mirrors the object tool's gesture state machine.
+    public event Action<string, int, float, float>? RiverVertexDragPreview;
+    public event Action<string, int, int, int, float, float, int, int, float, float>? RiverVertexDragRelease;
+
+    private bool _riverVertexGesturePressed;
+    private bool _riverVertexGestureDragging;
+    private Point _riverVertexGestureStart;
+    private string? _riverVertexGestureRiverId;
+    private int _riverVertexGestureIndex;
+    private bool _riverVertexGestureShift;
+    private int _riverVertexBeforeCx, _riverVertexBeforeCy;
+    private float _riverVertexBeforeSx, _riverVertexBeforeSy;
+    private const double RiverVertexDragThresholdPx = 4.0;
+
     // Place-object tool: a click (no drag) drops a new ObjectInstance at
     // the picked cell; a drag rubber-bands a selection over objects in
     // the enclosed world-space rectangle.
@@ -633,7 +649,25 @@ public class TerrainViewport : OpenGlControlBase
                 var hit = PickRiverVertex(p.x, p.y);
                 bool shift = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
                 if (hit.HasValue)
-                    RiverVertexSelectRequested?.Invoke(hit.Value.riverId, hit.Value.index, shift);
+                {
+                    // Defer: on release without movement we fire select; on
+                    // drag we fire a position-move event.
+                    var r2 = FindRiverAnywhere(hit.Value.riverId);
+                    if (r2 is not null && hit.Value.index >= 0 && hit.Value.index < r2.Vertices.Count)
+                    {
+                        var vSnap = r2.Vertices[hit.Value.index];
+                        _riverVertexGesturePressed = true;
+                        _riverVertexGestureDragging = false;
+                        _riverVertexGestureStart = pos;
+                        _riverVertexGestureRiverId = hit.Value.riverId;
+                        _riverVertexGestureIndex = hit.Value.index;
+                        _riverVertexGestureShift = shift;
+                        _riverVertexBeforeCx = vSnap.CellX;
+                        _riverVertexBeforeCy = vSnap.CellY;
+                        _riverVertexBeforeSx = vSnap.SubCellX;
+                        _riverVertexBeforeSy = vSnap.SubCellY;
+                    }
+                }
                 else
                     RiverVertexAddRequested?.Invoke(p.x, p.y);
             }
@@ -697,6 +731,34 @@ public class TerrainViewport : OpenGlControlBase
             double x1 = Math.Max(_boxStart.X, pos.X), y1 = Math.Max(_boxStart.Y, pos.Y);
             BoxSelectRect = new Avalonia.Rect(x0, y0, x1 - x0, y1 - y0);
             BoxSelectVisualChanged?.Invoke();
+            return;
+        }
+
+        if (_riverVertexGesturePressed && _riverVertexGestureRiverId is not null)
+        {
+            var d = pos - _riverVertexGestureStart;
+            if (!_riverVertexGestureDragging
+                && (Math.Abs(d.X) > RiverVertexDragThresholdPx || Math.Abs(d.Y) > RiverVertexDragThresholdPx))
+                _riverVertexGestureDragging = true;
+            if (_riverVertexGestureDragging)
+            {
+                var wp = PickWorldPoint(pos);
+                if (wp is { } p)
+                {
+                    var r = FindRiverAnywhere(_riverVertexGestureRiverId);
+                    if (r is not null && _riverVertexGestureIndex >= 0
+                        && _riverVertexGestureIndex < r.Vertices.Count)
+                    {
+                        var v = r.Vertices[_riverVertexGestureIndex];
+                        int cx = (int)Math.Floor(p.x);
+                        int cy = (int)Math.Floor(p.y);
+                        v.CellX = cx; v.CellY = cy;
+                        v.SubCellX = p.x - cx; v.SubCellY = p.y - cy;
+                        RiverVertexDragPreview?.Invoke(_riverVertexGestureRiverId,
+                            _riverVertexGestureIndex, p.x, p.y);
+                    }
+                }
+            }
             return;
         }
 
@@ -788,6 +850,44 @@ public class TerrainViewport : OpenGlControlBase
             BoxSelectRect = null;
             BoxSelectVisualChanged?.Invoke();
             RequestFrame();
+        }
+        if (_riverVertexGesturePressed && e.InitialPressMouseButton == MouseButton.Left)
+        {
+            _riverVertexGesturePressed = false;
+            if (_riverVertexGestureRiverId is not null)
+            {
+                if (_riverVertexGestureDragging)
+                {
+                    var r = FindRiverAnywhere(_riverVertexGestureRiverId);
+                    if (r is not null && _riverVertexGestureIndex >= 0
+                        && _riverVertexGestureIndex < r.Vertices.Count)
+                    {
+                        var v = r.Vertices[_riverVertexGestureIndex];
+                        int afterCx = v.CellX;
+                        int afterCy = v.CellY;
+                        float afterSx = v.SubCellX;
+                        float afterSy = v.SubCellY;
+                        // Restore the before snapshot so the command's
+                        // Execute lands the final write — same pattern as
+                        // the handle drag.
+                        v.CellX = _riverVertexBeforeCx; v.CellY = _riverVertexBeforeCy;
+                        v.SubCellX = _riverVertexBeforeSx; v.SubCellY = _riverVertexBeforeSy;
+                        RiverVertexDragRelease?.Invoke(_riverVertexGestureRiverId,
+                            _riverVertexGestureIndex,
+                            _riverVertexBeforeCx, _riverVertexBeforeCy,
+                            _riverVertexBeforeSx, _riverVertexBeforeSy,
+                            afterCx, afterCy, afterSx, afterSy);
+                    }
+                }
+                else
+                {
+                    // Pure click → select, not move.
+                    RiverVertexSelectRequested?.Invoke(_riverVertexGestureRiverId,
+                        _riverVertexGestureIndex, _riverVertexGestureShift);
+                }
+            }
+            _riverVertexGestureDragging = false;
+            _riverVertexGestureRiverId = null;
         }
         if (_riverHandleDragging && e.InitialPressMouseButton == MouseButton.Left)
         {

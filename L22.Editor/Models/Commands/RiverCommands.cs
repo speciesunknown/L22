@@ -144,6 +144,70 @@ public sealed class SetRiverVertexHandleCommand : IEditorCommand
     }
 }
 
+// Vertex position move via drag. Captures the full CellX/Y/SubCellX/Y
+// quartet so sub-cell precision survives undo.
+public sealed class SetRiverVertexPositionCommand : IEditorCommand
+{
+    private readonly EditorContext _ctx;
+    private readonly string _riverId;
+    private readonly int _index;
+    private readonly int _beforeCx, _beforeCy;
+    private readonly float _beforeSx, _beforeSy;
+    private readonly int _afterCx, _afterCy;
+    private readonly float _afterSx, _afterSy;
+
+    public string Name => "Move river vertex";
+
+    public SetRiverVertexPositionCommand(EditorContext ctx, string riverId, int index,
+        int beforeCx, int beforeCy, float beforeSx, float beforeSy,
+        int afterCx, int afterCy, float afterSx, float afterSy)
+    {
+        _ctx = ctx; _riverId = riverId; _index = index;
+        _beforeCx = beforeCx; _beforeCy = beforeCy; _beforeSx = beforeSx; _beforeSy = beforeSy;
+        _afterCx = afterCx; _afterCy = afterCy; _afterSx = afterSx; _afterSy = afterSy;
+    }
+
+    public void Execute(World.World world)
+    {
+        var r = FindAnywhere(_ctx, _riverId);
+        if (r is null || _index < 0 || _index >= r.Vertices.Count) return;
+        var v = r.Vertices[_index];
+        v.CellX = _afterCx; v.CellY = _afterCy;
+        v.SubCellX = _afterSx; v.SubCellY = _afterSy;
+        _ctx.RaiseRiversChanged();
+    }
+
+    public void Undo(World.World world)
+    {
+        var r = FindAnywhere(_ctx, _riverId);
+        if (r is null || _index < 0 || _index >= r.Vertices.Count) return;
+        var v = r.Vertices[_index];
+        v.CellX = _beforeCx; v.CellY = _beforeCy;
+        v.SubCellX = _beforeSx; v.SubCellY = _beforeSy;
+        _ctx.RaiseRiversChanged();
+    }
+
+    private static River? FindAnywhere(EditorContext ctx, string id)
+    {
+        foreach (var r in ctx.Rivers)
+        {
+            var hit = Recurse(r, id);
+            if (hit is not null) return hit;
+        }
+        return null;
+    }
+    private static River? Recurse(River r, string id)
+    {
+        if (r.Id == id) return r;
+        foreach (var b in r.Branches)
+        {
+            var hit = Recurse(b, id);
+            if (hit is not null) return hit;
+        }
+        return null;
+    }
+}
+
 // Scenario 3: increase the width of the selected vertex changes that
 // node *and its two neighbours*. The neighbour effect is at half the
 // delta so the taper is smooth.

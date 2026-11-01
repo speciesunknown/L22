@@ -109,6 +109,8 @@ public partial class MainWindow : Window
         EditViewport.RiverVertexSelectRequested += OnRiverVertexSelectRequested;
         EditViewport.RiverHandleDragPreview += OnRiverHandleDragPreview;
         EditViewport.RiverHandleDragRelease += OnRiverHandleDragRelease;
+        EditViewport.RiverVertexDragPreview += OnRiverVertexDragPreview;
+        EditViewport.RiverVertexDragRelease += OnRiverVertexDragRelease;
         SlRiverWidth.ValueChanged += OnRiverWidthSliderChanged;
 
         RegisterSliderBinding(SlRadius,    LblRadius,    TxtRadius,    v => { if (ViewModel.Brush is { } b) b.Radius = (int)Math.Round(v); }, v => ((int)Math.Round(v)).ToString());
@@ -782,6 +784,27 @@ public partial class MainWindow : Window
         if (!anyChanged) return;  // all vertices already at target
     }
 
+    private void OnRiverVertexDragPreview(string riverId, int index, float wx, float wz)
+    {
+        RefreshRiverOverlay();
+    }
+
+    private void OnRiverVertexDragRelease(string riverId, int index,
+        int beforeCx, int beforeCy, float beforeSx, float beforeSy,
+        int afterCx, int afterCy, float afterSx, float afterSy)
+    {
+        var ctx = ViewModel.Active?.Context;
+        if (ctx is null) return;
+        if (beforeCx == afterCx && beforeCy == afterCy
+            && System.Math.Abs(beforeSx - afterSx) < 1e-4f
+            && System.Math.Abs(beforeSy - afterSy) < 1e-4f) return;
+        var cmd = new L22.Editor.Models.Commands.SetRiverVertexPositionCommand(
+            ctx, riverId, index,
+            beforeCx, beforeCy, beforeSx, beforeSy,
+            afterCx, afterCy, afterSx, afterSy);
+        ctx.History.ExecuteAndPush(cmd);
+    }
+
     private void OnRiverHandleDragPreview(string riverId, int index, float x, float y)
     {
         // Model is already mutated by the viewport mid-drag; just repaint
@@ -951,7 +974,9 @@ public partial class MainWindow : Window
 
             // Bezier out-handle: a small filled square at the handle tip,
             // plus a line from vertex centre so the direction is visually
-            // obvious.
+            // obvious. On top of that a chevron arrow where the handle
+            // direction crosses the width ring — makes flow legible at a
+            // glance even when the ring is big and the handle stub is tiny.
             float hx = v.WorldX + v.BezierHandleOut.X;
             float hz = v.WorldZ + v.BezierHandleOut.Y;
             var hp = toScreen(hx, hz);
@@ -963,6 +988,24 @@ public partial class MainWindow : Window
             ctx.LineTo(new Point(hp.X + 3, hp.Y + 3));
             ctx.LineTo(new Point(hp.X - 3, hp.Y + 3));
             ctx.EndFigure(isClosed: true);
+
+            float hmag2 = v.BezierHandleOut.X * v.BezierHandleOut.X
+                        + v.BezierHandleOut.Y * v.BezierHandleOut.Y;
+            if (hmag2 > 1e-4f)
+            {
+                double angle = Math.Atan2(v.BezierHandleOut.Y, v.BezierHandleOut.X);
+                double tipX = p.X + rPx * Math.Cos(angle);
+                double tipY = p.Y + rPx * Math.Sin(angle);
+                double leftAng = angle + Math.PI * 0.78;
+                double rightAng = angle - Math.PI * 0.78;
+                double chevLen = 7;
+                ctx.BeginFigure(new Point(tipX, tipY), isFilled: true);
+                ctx.LineTo(new Point(tipX + chevLen * Math.Cos(leftAng),
+                                     tipY + chevLen * Math.Sin(leftAng)));
+                ctx.LineTo(new Point(tipX + chevLen * Math.Cos(rightAng),
+                                     tipY + chevLen * Math.Sin(rightAng)));
+                ctx.EndFigure(isClosed: true);
+            }
         }
         foreach (var b in r.Branches) WalkRiver(ctx, b, toScreen, worldToScreen);
     }
@@ -1421,7 +1464,7 @@ public partial class MainWindow : Window
         {
             if (EditViewport.CameraFree) { EditViewport.SetCameraFree(false); e.Handled = true; return; }
             if (FreeViewport.CameraFree) { FreeViewport.SetCameraFree(false); e.Handled = true; return; }
-            // Esc also clears an in-scene object selection.
+            // Esc also clears an in-scene object or river selection.
             var ctx = ViewModel.Active?.Context;
             if (ctx is { } c && c.SelectedObjectIds.Count > 0)
             {
@@ -1430,6 +1473,16 @@ public partial class MainWindow : Window
                 SyncObjectListSelection();
                 EditViewport.RequestFrame();
                 FreeViewport.RequestFrame();
+                e.Handled = true;
+                return;
+            }
+            if (ctx is { } cr && cr.SelectedRiverVertices.Count > 0)
+            {
+                cr.SelectedRiverVertices.Clear();
+                cr.SelectedRiverVertex = null;
+                cr.RaiseSelectedRiverVertexChanged();
+                RefreshRiverVertexPanel();
+                RefreshRiverOverlay();
                 e.Handled = true;
                 return;
             }
