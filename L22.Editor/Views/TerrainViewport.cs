@@ -64,6 +64,10 @@ public class TerrainViewport : OpenGlControlBase
     // river at the picked cell (sub-cell position by exact mouse point).
     public bool RiverToolActive { get; set; }
     public event Action<float, float>? RiverVertexAddRequested;
+    // Right-click in River tool mode: "end current river" — next click
+    // starts fresh. Esc / Enter in MainWindow route through the same
+    // handler.
+    public event Action? RiverToolEndRequested;
     // Journey scenario 1: hit-test on an existing vertex handle emits this
     // (riverId, vertexIndex, addToSelection) so MainWindow can set it as
     // the selection or append to the running multi-select set.
@@ -607,6 +611,14 @@ public class TerrainViewport : OpenGlControlBase
         var props = e.GetCurrentPoint(this).Properties;
         if (props.IsRightButtonPressed)
         {
+            // Right-click in River tool "ends" the current river rather
+            // than starting a camera rotate. The camera rotate is still
+            // available via any other tool.
+            if (RiverToolActive && TopDown)
+            {
+                RiverToolEndRequested?.Invoke();
+                return;
+            }
             _rotating = true;
             _rotateLast = pos;
             return;

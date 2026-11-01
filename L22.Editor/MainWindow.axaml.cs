@@ -111,6 +111,7 @@ public partial class MainWindow : Window
         EditViewport.RiverHandleDragRelease += OnRiverHandleDragRelease;
         EditViewport.RiverVertexDragPreview += OnRiverVertexDragPreview;
         EditViewport.RiverVertexDragRelease += OnRiverVertexDragRelease;
+        EditViewport.RiverToolEndRequested += EndCurrentRiver;
         SlRiverWidth.ValueChanged += OnRiverWidthSliderChanged;
 
         RegisterSliderBinding(SlRadius,    LblRadius,    TxtRadius,    v => { if (ViewModel.Brush is { } b) b.Radius = (int)Math.Round(v); }, v => ((int)Math.Round(v)).ToString());
@@ -782,6 +783,26 @@ public partial class MainWindow : Window
             anyChanged = true;
         }
         if (!anyChanged) return;  // all vertices already at target
+    }
+
+    // Esc / Enter / right-click in river mode call this to "end the
+    // current river" — next left click on empty space starts a fresh
+    // river rather than extending the active one. Multi-selection also
+    // clears so there's no stale anchor for a branch.
+    private void EndCurrentRiver()
+    {
+        _activeRiverId = null;
+        var ctx = ViewModel.Active?.Context;
+        if (ctx is null) return;
+        if (ctx.SelectedRiverVertices.Count > 0 || ctx.SelectedRiverVertex is not null)
+        {
+            ctx.SelectedRiverVertices.Clear();
+            ctx.SelectedRiverVertex = null;
+            ctx.RaiseSelectedRiverVertexChanged();
+        }
+        RefreshRiverList();   // repaint ● marker
+        RefreshRiverVertexPanel();
+        RefreshRiverOverlay();
     }
 
     private void OnRiverVertexDragPreview(string riverId, int index, float wx, float wz)
@@ -1476,13 +1497,19 @@ public partial class MainWindow : Window
                 e.Handled = true;
                 return;
             }
-            if (ctx is { } cr && cr.SelectedRiverVertices.Count > 0)
+            if (ctx is { } cr && (cr.SelectedRiverVertices.Count > 0 || _activeRiverId is not null))
             {
-                cr.SelectedRiverVertices.Clear();
-                cr.SelectedRiverVertex = null;
-                cr.RaiseSelectedRiverVertexChanged();
-                RefreshRiverVertexPanel();
-                RefreshRiverOverlay();
+                EndCurrentRiver();
+                e.Handled = true;
+                return;
+            }
+        }
+        if (e.Key == Key.Enter && EditViewport.RiverToolActive)
+        {
+            if (ViewModel.Active?.Context is { } crEnter
+                && (crEnter.SelectedRiverVertices.Count > 0 || _activeRiverId is not null))
+            {
+                EndCurrentRiver();
                 e.Handled = true;
                 return;
             }

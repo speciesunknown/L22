@@ -48,3 +48,10 @@ WHEN I click on the map
 THEN I will be starting a new river
 
 
+## Ending the current river
+GIVEN I am extending or editing a river
+WHEN I press Esc, press Enter, or right-click in the top-down view
+THEN the current river becomes "no longer active"
+AND my next left-click on empty space starts a brand new river
+AND any multi-vertex selection is cleared
+
