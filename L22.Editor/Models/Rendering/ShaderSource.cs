@@ -145,6 +145,28 @@ void main() {
 }
 ";
 
+    // River strip. Flat alpha-blended color at the terrain surface + a small
+    // Y lift so it doesn't z-fight the ground; Phase 4 will push the terrain
+    // down to meet it rather than lifting the river up.
+    public const string RiverVertex = @"#version 300 es
+precision highp float;
+layout(location = 0) in vec3 aPos;
+uniform mat4 uView;
+uniform mat4 uProj;
+void main() {
+    gl_Position = uProj * uView * vec4(aPos, 1.0);
+}
+";
+
+    public const string RiverFragment = @"#version 300 es
+precision highp float;
+uniform vec4 uColor;
+out vec4 oColor;
+void main() {
+    oColor = uColor;
+}
+";
+
     public const string CubeFragment = @"#version 300 es
 precision highp float;
 in vec3 vLocal;

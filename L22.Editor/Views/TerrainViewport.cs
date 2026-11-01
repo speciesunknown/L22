@@ -64,9 +64,9 @@ public class TerrainViewport : OpenGlControlBase
     // river at the picked cell (sub-cell position by exact mouse point).
     public bool RiverToolActive { get; set; }
     public event Action<float, float>? RiverVertexAddRequested;
-    public event Action<string, int>? RiverVertexSelectRequested;  // riverId, vertexIndex
-    public event Action<float, float>? RiverVertexDragRequested;   // dx, dy world
-    public event Action? RiverVertexDragEnded;
+    // Select / drag events deferred until Phase 3 wires vertex hit-testing;
+    // keeping the dead stubs out of the surface so the IDE isn't littered
+    // with CS0067 warnings.
 
     // Place-object tool: a click (no drag) drops a new ObjectInstance at
     // the picked cell; a drag rubber-bands a selection over objects in
@@ -292,6 +292,7 @@ public class TerrainViewport : OpenGlControlBase
 
         var frustumPoints = ComputeFrustumPoints();
         var gpuObjects = ComputeGpuObjects();
+        var riverMesh = ComputeRiverMesh();
 
         _renderer.Render(gl, w, h, Camera.View, Camera.Projection(aspect),
                          _lastBrushCenter, brushRadiusWorld, brushPaintableNow,
@@ -301,7 +302,8 @@ public class TerrainViewport : OpenGlControlBase
                          greyLowY: greyLow, greyHighY: greyHigh,
                          hideUnset: !TopDown,
                          frustumPoints: frustumPoints,
-                         objects: gpuObjects);
+                         objects: gpuObjects,
+                         riverMesh: riverMesh);
 
         if (CaptureRequested)
         {
@@ -361,6 +363,62 @@ public class TerrainViewport : OpenGlControlBase
             arr[i] = new GpuObjectInstance(pos, path, new Vector4(u0, v0, u1, v1), isSelected);
         }
         return arr;
+    }
+
+    // Build one combined strip mesh for every river in the scene (branches
+    // recurse). Each segment [i, i+1] becomes a 4-vertex quad with the
+    // perpendicular offset = width/2. Positions sit at the terrain surface
+    // plus 0.08 world units so they don't z-fight the ground; Phase 4 will
+    // instead push terrain under them.
+    private const float RiverLiftY = 0.08f;
+    private GpuRiverMesh? ComputeRiverMesh()
+    {
+        if (Rivers is null || Rivers.Count == 0 || World is null) return null;
+        var verts = new System.Collections.Generic.List<float>();
+        var idx = new System.Collections.Generic.List<uint>();
+        foreach (var r in Rivers) AddRiver(verts, idx, r);
+        if (idx.Count == 0) return null;
+        return new GpuRiverMesh { Vertices = verts.ToArray(), Indices = idx.ToArray() };
+    }
+
+    private void AddRiver(System.Collections.Generic.List<float> verts,
+                           System.Collections.Generic.List<uint> idx, River r)
+    {
+        if (r.Vertices.Count >= 2)
+        {
+            for (int i = 0; i < r.Vertices.Count - 1; i++)
+                AddSegment(verts, idx, r.Vertices[i], r.Vertices[i + 1]);
+        }
+        foreach (var b in r.Branches) AddRiver(verts, idx, b);
+    }
+
+    private void AddSegment(System.Collections.Generic.List<float> verts,
+                             System.Collections.Generic.List<uint> idx,
+                             RiverVertex a, RiverVertex b)
+    {
+        if (World is null) return;
+        float ax = a.WorldX, az = a.WorldZ;
+        float bx = b.WorldX, bz = b.WorldZ;
+        float ay = TerrainMeshBuilder.SampleSurfaceY(World,
+                        (int)System.Math.Floor(ax), (int)System.Math.Floor(az)) + RiverLiftY;
+        float by = TerrainMeshBuilder.SampleSurfaceY(World,
+                        (int)System.Math.Floor(bx), (int)System.Math.Floor(bz)) + RiverLiftY;
+        float dx = bx - ax, dz = bz - az;
+        float len = MathF.Sqrt(dx * dx + dz * dz);
+        if (len < 1e-5f) return;
+        float nx = -dz / len, nz = dx / len;  // left-hand perpendicular on XZ
+        float wa = MathF.Max(0.01f, a.WidthWorld) * 0.5f;
+        float wb = MathF.Max(0.01f, b.WidthWorld) * 0.5f;
+
+        uint baseIdx = (uint)(verts.Count / 3);
+        // v0 = a + perp*wa (left), v1 = a - perp*wa (right)
+        verts.Add(ax + nx * wa); verts.Add(ay); verts.Add(az + nz * wa);
+        verts.Add(ax - nx * wa); verts.Add(ay); verts.Add(az - nz * wa);
+        verts.Add(bx + nx * wb); verts.Add(by); verts.Add(bz + nz * wb);
+        verts.Add(bx - nx * wb); verts.Add(by); verts.Add(bz - nz * wb);
+        // two triangles, CCW from above
+        idx.Add(baseIdx + 0); idx.Add(baseIdx + 2); idx.Add(baseIdx + 1);
+        idx.Add(baseIdx + 1); idx.Add(baseIdx + 2); idx.Add(baseIdx + 3);
     }
 
     // Projects the source viewport's view frustum onto y=0 and returns

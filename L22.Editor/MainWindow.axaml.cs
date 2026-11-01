@@ -722,6 +722,7 @@ public partial class MainWindow : Window
         EditViewport.DropperToolActive = false;
         EditViewport.PlaceObjectToolActive = false;
         EditViewport.RiverToolActive = true;
+        EditViewport.ClearSelectedCorners();
         EditViewportHost.Cursor = new Cursor(StandardCursorType.Cross);
         BrushOverlay.IsVisible = false;
         DropperOverlay.IsVisible = false;
@@ -1444,6 +1445,7 @@ public partial class MainWindow : Window
         EditViewport.CornerToolActive = true;
         EditViewport.DropperToolActive = false;
         EditViewport.PlaceObjectToolActive = false;
+        EditViewport.RiverToolActive = false;
         // Hide the OS cursor and let the Avalonia Path overlay represent it.
         EditViewportHost.Cursor = new Cursor(StandardCursorType.None);
         BrushOverlay.IsVisible = false;

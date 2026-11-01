@@ -43,6 +43,11 @@ public sealed class TerrainGlRenderer
     private int _uBbView, _uBbProj, _uBbCenter, _uBbSize, _uBbUvRect, _uBbTex;
     private int _billboardVao, _billboardVbo;
     private bool _billboardInitialized;
+
+    private int _riverProgram;
+    private int _uRvView, _uRvProj, _uRvColor;
+    private int _riverVao, _riverVbo, _riverEbo;
+    private bool _riverInitialized;
     // Icon path → GL texture name. 0 means we tried and failed to load
     // (missing file, bad PNG). Negative-cached so we don't thrash the disk
     // every frame on broken IconRef.ImagePath values.
@@ -81,6 +86,11 @@ public sealed class TerrainGlRenderer
         _uGreyLowY = gl.GetUniformLocationString(_terrainProgram, "uGreyLowY");
         _uGreyHighY = gl.GetUniformLocationString(_terrainProgram, "uGreyHighY");
         _uHideUnset = gl.GetUniformLocationString(_terrainProgram, "uHideUnset");
+
+        _riverProgram = CompileLink(gl, ShaderSource.RiverVertex, ShaderSource.RiverFragment);
+        _uRvView = gl.GetUniformLocationString(_riverProgram, "uView");
+        _uRvProj = gl.GetUniformLocationString(_riverProgram, "uProj");
+        _uRvColor = gl.GetUniformLocationString(_riverProgram, "uColor");
 
         _wireProgram = CompileLink(gl, ShaderSource.GridVertex, ShaderSource.GridFragment);
         _uWireView = gl.GetUniformLocationString(_wireProgram, "uView");
@@ -130,7 +140,8 @@ public sealed class TerrainGlRenderer
                        float greyHighY = 14f,
                        bool hideUnset = false,
                        Vector3[]? frustumPoints = null,
-                       GpuObjectInstance[]? objects = null)
+                       GpuObjectInstance[]? objects = null,
+                       GpuRiverMesh? riverMesh = null)
     {
         // Apply a pending world swap now that we have a live GL context.
         if (_pendingNewWorld is { } nextWorld)
@@ -200,6 +211,9 @@ public sealed class TerrainGlRenderer
         if (frustumPoints is { Length: 5 })
             DrawFrustum(gl, view, proj, frustumPoints);
 
+        if (riverMesh is { Indices.Length: > 0 })
+            DrawRivers(gl, view, proj, riverMesh);
+
         if (objects is { Length: > 0 })
             DrawObjects(gl, view, proj, objects, keepDepthTest: hideUnset);
 
@@ -252,6 +266,46 @@ public sealed class TerrainGlRenderer
         0,1,5, 0,5,4,   // bottom
         3,7,6, 3,6,2,   // top
     };
+
+    // Rivers phase 3: upload the strip mesh fresh each frame (small count,
+    // and the geometry changes any time a vertex moves or the terrain
+    // beneath shifts height). Alpha-blended flat blue. Depth test stays on
+    // so terrain still occludes the river where it dips below ground.
+    private unsafe void DrawRivers(GlInterface gl, Matrix4x4 view, Matrix4x4 proj, GpuRiverMesh mesh)
+    {
+        if (!_riverInitialized)
+        {
+            _riverVao = gl.GenVertexArray();
+            _riverVbo = gl.GenBuffer();
+            _riverEbo = gl.GenBuffer();
+            gl.BindVertexArray(_riverVao);
+            gl.BindBuffer(GL_ARRAY_BUFFER, _riverVbo);
+            gl.BindBuffer(GL_ELEMENT_ARRAY_BUFFER, _riverEbo);
+            gl.VertexAttribPointer(0, 3, GL_FLOAT, 0, 3 * sizeof(float), IntPtr.Zero);
+            gl.EnableVertexAttribArray(0);
+            _riverInitialized = true;
+        }
+        gl.BindVertexArray(_riverVao);
+        gl.BindBuffer(GL_ARRAY_BUFFER, _riverVbo);
+        fixed (float* vp = mesh.Vertices)
+            gl.BufferData(GL_ARRAY_BUFFER,
+                (IntPtr)(mesh.Vertices.Length * sizeof(float)),
+                (IntPtr)vp, GlExtras.GL_DYNAMIC_DRAW);
+        gl.BindBuffer(GL_ELEMENT_ARRAY_BUFFER, _riverEbo);
+        fixed (uint* ip = mesh.Indices)
+            gl.BufferData(GL_ELEMENT_ARRAY_BUFFER,
+                (IntPtr)(mesh.Indices.Length * sizeof(uint)),
+                (IntPtr)ip, GlExtras.GL_DYNAMIC_DRAW);
+
+        gl.Enable(GlExtras.GL_BLEND);
+        _extras.BlendFunc(GlExtras.GL_SRC_ALPHA, GlExtras.GL_ONE_MINUS_SRC_ALPHA);
+        gl.UseProgram(_riverProgram);
+        SetUniformMatrix4(gl, _uRvView, view);
+        SetUniformMatrix4(gl, _uRvProj, proj);
+        _extras.Uniform4f(_uRvColor, 0.18f, 0.42f, 0.78f, 0.75f);
+        gl.DrawElements(GL_TRIANGLES, mesh.Indices.Length, GlExtras.GL_UNSIGNED_INT, IntPtr.Zero);
+        gl.Disable(GlExtras.GL_BLEND);
+    }
 
     // Unit quad centered on origin — used for the billboard pass. Position
     // in local XY ([-0.5..0.5]), UV in [0..1].
@@ -549,10 +603,20 @@ public sealed class TerrainGlRenderer
             _cubeEbo = _cubeVbo = _cubeVao = 0;
             _cubeInitialized = false;
         }
+        if (_riverInitialized)
+        {
+            if (_riverEbo != 0) gl.DeleteBuffer(_riverEbo);
+            if (_riverVbo != 0) gl.DeleteBuffer(_riverVbo);
+            if (_riverVao != 0) gl.DeleteVertexArray(_riverVao);
+            _riverEbo = _riverVbo = _riverVao = 0;
+            _riverInitialized = false;
+        }
+        if (_riverProgram != 0) gl.DeleteProgram(_riverProgram);
         _terrainProgram = 0;
         _wireProgram = 0;
         _cornerProgram = 0;
         _cubeProgram = 0;
+        _riverProgram = 0;
         Initialized = false;
     }
 
