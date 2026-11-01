@@ -36,6 +36,7 @@ public partial class ObjectEditorDialog : Window
         TxtDisplayName.Text = payload.DisplayName;
         TxtCodeName.Text = payload.CodeName;
         _roots = new ObservableCollection<PropertyNodeVm>();
+        _roots.CollectionChanged += OnRootsChanged;
         foreach (var p in payload.Properties) _roots.Add(PropertyNodeVm.From(p));
         PropTree.ItemsSource = _roots;
 
@@ -219,6 +220,30 @@ public partial class ObjectEditorDialog : Window
         foreach (var c in node.Children)
             if (RemoveFromChildren(c, target)) return true;
         return false;
+    }
+
+    // _roots is the sibling pool for the top-level VMs. The parent-VM
+    // Children collection self-manages via PropertyNodeVm.OnChildrenChanged;
+    // the dialog owns _roots so it does the same bookkeeping manually.
+    private void OnRootsChanged(object? sender,
+        System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+    {
+        if (e.NewItems is not null)
+            foreach (PropertyNodeVm c in e.NewItems) c.SiblingList = _roots;
+        if (e.OldItems is not null)
+            foreach (PropertyNodeVm c in e.OldItems)
+                if (ReferenceEquals(c.SiblingList, _roots)) c.SiblingList = null;
+        foreach (var r in _roots) r.RaiseSiblingMoveFlags();
+    }
+
+    private void OnMoveNodeUp(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Control c && c.DataContext is PropertyNodeVm vm) vm.MoveUp();
+    }
+
+    private void OnMoveNodeDown(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Control c && c.DataContext is PropertyNodeVm vm) vm.MoveDown();
     }
 }
 

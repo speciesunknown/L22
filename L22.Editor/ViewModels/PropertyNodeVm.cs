@@ -63,11 +63,75 @@ public sealed class PropertyNodeVm : INotifyPropertyChanged
 
     public bool IsGroup => Kind is PropertyKind.Array or PropertyKind.Properties;
 
+    // The IList this VM belongs to — either a parent's Children collection
+    // or the dialog's root list. Set by the owning collection's add
+    // handler (parent's OnChildrenChanged, or the dialog explicitly).
+    // The Up/Down buttons key off this.
+    public System.Collections.Generic.IList<PropertyNodeVm>? SiblingList { get; internal set; }
+
     public PropertyNodeVm(string name, PropertyKind kind)
     {
         _name = name;
         _kind = kind;
-        Children.CollectionChanged += (_, _) => Raise(nameof(DisplayLine));
+        Children.CollectionChanged += OnChildrenChanged;
+    }
+
+    private void OnChildrenChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+    {
+        if (e.NewItems is not null)
+            foreach (PropertyNodeVm c in e.NewItems) c.SiblingList = Children;
+        if (e.OldItems is not null)
+            foreach (PropertyNodeVm c in e.OldItems)
+                if (ReferenceEquals(c.SiblingList, Children)) c.SiblingList = null;
+        // Any shuffle changes sibling indices, so refresh the move flags
+        // on every member.
+        foreach (var c in Children) c.RaiseSiblingMoveFlags();
+        Raise(nameof(DisplayLine));
+    }
+
+    internal void RaiseSiblingMoveFlags()
+    {
+        Raise(nameof(CanMoveUp));
+        Raise(nameof(CanMoveDown));
+    }
+
+    public bool CanMoveUp
+    {
+        get
+        {
+            if (SiblingList is null) return false;
+            int i = SiblingList.IndexOf(this);
+            return i > 0;
+        }
+    }
+    public bool CanMoveDown
+    {
+        get
+        {
+            if (SiblingList is null) return false;
+            int i = SiblingList.IndexOf(this);
+            return i >= 0 && i < SiblingList.Count - 1;
+        }
+    }
+
+    public void MoveUp()
+    {
+        if (SiblingList is null) return;
+        int i = SiblingList.IndexOf(this);
+        if (i <= 0) return;
+        SiblingList.RemoveAt(i);
+        SiblingList.Insert(i - 1, this);
+        // The containing collection fires CollectionChanged on
+        // ObservableCollection, which refreshes the move flags.
+    }
+
+    public void MoveDown()
+    {
+        if (SiblingList is null) return;
+        int i = SiblingList.IndexOf(this);
+        if (i < 0 || i >= SiblingList.Count - 1) return;
+        SiblingList.RemoveAt(i);
+        SiblingList.Insert(i + 1, this);
     }
 
     public static PropertyNodeVm From(PropertyNode node)

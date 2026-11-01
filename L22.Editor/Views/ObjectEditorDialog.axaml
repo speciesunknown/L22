@@ -82,6 +82,14 @@
                                          Watermark="name" KeyDown="OnTreeRowKeyDown"/>
                                 <TextBox Tag="value" Text="{Binding ValueDisplay, Mode=TwoWay}" Width="220" FontSize="11"
                                          Watermark="value" KeyDown="OnTreeRowKeyDown"/>
+                                <Button Content="▲" Padding="4,0" FontSize="10"
+                                        ToolTip.Tip="Move up"
+                                        IsVisible="{Binding CanMoveUp}"
+                                        Click="OnMoveNodeUp"/>
+                                <Button Content="▼" Padding="4,0" FontSize="10"
+                                        ToolTip.Tip="Move down"
+                                        IsVisible="{Binding CanMoveDown}"
+                                        Click="OnMoveNodeDown"/>
                             </StackPanel>
                         </TreeDataTemplate>
                     </TreeView.ItemTemplate>
