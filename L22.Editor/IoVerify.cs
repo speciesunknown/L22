@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Numerics;
 using System.Text.Json;
 using L22.Editor.Models;
 using L22.Editor.Models.Objects;
+using L22.Editor.Models.Rivers;
 using L22.Editor.Models.World;
 
 namespace L22.Editor;
@@ -20,10 +22,11 @@ internal static class IoVerify
         {
             var world = BuildTestWorld("source");
             var objects = BuildTestObjects();
+            var rivers = BuildTestRivers();
             var tmpPath = Path.Combine(Path.GetTempPath(),
                 $"l22-io-{Guid.NewGuid():N}.l22proj");
 
-            ProjectIO.Save(world, DocumentKind.Scene, tmpPath, objects);
+            ProjectIO.Save(world, DocumentKind.Scene, tmpPath, objects, rivers);
             long folderBytes = DirectorySize(tmpPath);
             int fileCount = Directory.GetFiles(tmpPath, "*", SearchOption.AllDirectories).Length;
 
@@ -34,6 +37,7 @@ internal static class IoVerify
             if (reloaded.Kind != DocumentKind.Scene)
                 reason ??= $"kind mismatch: expected Scene, got {reloaded.Kind}";
             reason ??= CompareObjects(objects, reloaded.Objects);
+            reason ??= CompareRivers(rivers, reloaded.Rivers);
             if (reason is not null)
             {
                 Console.Error.WriteLine($"FAIL: {reason}");
@@ -42,7 +46,7 @@ internal static class IoVerify
 
             Console.Out.WriteLine($"OK: round-trip clean. folder bytes = {folderBytes}, "
                                 + $"files = {fileCount}, chunks = {world.Chunks.Count}, "
-                                + $"objects = {objects.Count}");
+                                + $"objects = {objects.Count}, rivers = {rivers.Count}");
             return 0;
         }
         catch (Exception ex)
@@ -108,6 +112,71 @@ internal static class IoVerify
             var sa = JsonSerializer.Serialize(a[i], opts);
             var sb = JsonSerializer.Serialize(b[i], opts);
             if (sa != sb) return $"object #{i} differs: {sa} vs {sb}";
+        }
+        return null;
+    }
+
+    // Two rivers; one with a branch; vertices carry sub-cell offsets +
+    // custom widths + bezier handles so a regression anywhere in the
+    // round-trip surfaces.
+    private static List<River> BuildTestRivers()
+    {
+        return new List<River>
+        {
+            new River
+            {
+                Id = "river-main",
+                Name = "Main river",
+                Vertices =
+                {
+                    new RiverVertex { CellX = 10, CellY = 10, SubCellX = 0.25f, SubCellY = 0.5f,
+                                      WidthWorld = 2.0f,
+                                      BezierHandleIn = new Vector2(-0.3f, 0f),
+                                      BezierHandleOut = new Vector2(0.4f, 0.1f) },
+                    new RiverVertex { CellX = 20, CellY = 15, SubCellX = 0.5f,  SubCellY = 0.5f,
+                                      WidthWorld = 2.5f,
+                                      BezierHandleIn = new Vector2(-0.5f, 0.1f),
+                                      BezierHandleOut = new Vector2(0.5f, -0.1f) },
+                    new RiverVertex { CellX = 30, CellY = 30, SubCellX = 0.5f,  SubCellY = 0.5f,
+                                      WidthWorld = 3.0f },
+                },
+                Branches =
+                {
+                    new River
+                    {
+                        Id = "river-main-branch-1",
+                        Name = "North branch",
+                        ForkFromIndex = 1,
+                        Vertices =
+                        {
+                            new RiverVertex { CellX = 20, CellY = 15, SubCellX = 0.5f, SubCellY = 0.5f, WidthWorld = 1.5f },
+                            new RiverVertex { CellX = 25, CellY =  5, SubCellX = 0.5f, SubCellY = 0.5f, WidthWorld = 1.0f },
+                        },
+                    },
+                },
+            },
+            new River
+            {
+                Id = "river-stream",
+                Name = "Side stream",
+                Vertices =
+                {
+                    new RiverVertex { CellX = 50, CellY = 60, WidthWorld = 1.0f },
+                    new RiverVertex { CellX = 55, CellY = 70, WidthWorld = 1.0f },
+                },
+            },
+        };
+    }
+
+    private static string? CompareRivers(List<River> a, List<River> b)
+    {
+        if (a.Count != b.Count) return $"river count differs: {a.Count} vs {b.Count}";
+        var opts = new JsonSerializerOptions { WriteIndented = false };
+        for (int i = 0; i < a.Count; i++)
+        {
+            var sa = JsonSerializer.Serialize(a[i], opts);
+            var sb = JsonSerializer.Serialize(b[i], opts);
+            if (sa != sb) return $"river #{i} differs: {sa} vs {sb}";
         }
         return null;
     }

@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using L22.Editor.Models.Commands;
 using L22.Editor.Models.Objects;
+using L22.Editor.Models.Rivers;
 using L22.Editor.Models.Tools;
 using L22.Editor.Models.World;
 using L22.Editor.ViewModels;
@@ -22,6 +23,10 @@ public sealed class EditorContext
     // Shared prefab library for the project. Multiple open scenes may
     // reference the same instance; wire SetLibraryDir at load time.
     public PrefabLibrary Prefabs { get; } = new();
+    // Scene-local rivers. Top-level polylines; branches recurse.
+    public List<River> Rivers { get; } = new();
+    public event System.Action? RiversChanged;
+    public void RaiseRiversChanged() => RiversChanged?.Invoke();
 
     // Fired after any Objects mutation. Viewports subscribe in
     // BindContext to redraw their object cubes.

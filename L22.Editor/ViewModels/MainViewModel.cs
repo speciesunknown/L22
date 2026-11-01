@@ -81,6 +81,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         var result = Models.World.ProjectIO.Load(path, fileId);
         var ctx = new EditorContext(result.World);
         ctx.Objects.AddRange(result.Objects);
+        ctx.Rivers.AddRange(result.Rivers);
         ctx.Prefabs.SetLibraryDir(ResolvePrefabLibraryDir(path));
         // Defensive: a freshly-loaded doc should start clean even if some
         // future World-build path pushes commands during load.
@@ -98,7 +99,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
     {
         if (_active is null) return;
         Models.World.ProjectIO.Save(
-            _active.Context.World, _active.Kind, path, _active.Context.Objects);
+            _active.Context.World, _active.Kind, path,
+            _active.Context.Objects, _active.Context.Rivers);
         _active.FilePath = path;
         _active.Name = System.IO.Path.GetFileNameWithoutExtension(path);
         _active.Context.Prefabs.SetLibraryDir(ResolvePrefabLibraryDir(path));

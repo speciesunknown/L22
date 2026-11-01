@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using L22.Editor.Models;
 using L22.Editor.Models.Objects;
+using L22.Editor.Models.Rivers;
 
 namespace L22.Editor.Models.World;
 
@@ -43,6 +44,7 @@ public static class ProjectIO
         public World World { get; init; } = null!;
         public DocumentKind Kind { get; init; }
         public List<ObjectInstance> Objects { get; init; } = new();
+        public List<River> Rivers { get; init; } = new();
     }
 
     private sealed class Index
@@ -57,7 +59,8 @@ public static class ProjectIO
     private sealed class CornerEntry { [JsonPropertyName("cx")] public int Cx { get; set; } [JsonPropertyName("cy")] public int Cy { get; set; } [JsonPropertyName("value")] public float Value { get; set; } }
 
     public static void Save(World world, DocumentKind kind, string folderPath,
-                            IReadOnlyList<ObjectInstance>? objects = null)
+                            IReadOnlyList<ObjectInstance>? objects = null,
+                            IReadOnlyList<River>? rivers = null)
     {
         // Save-As can target an existing file (old binary) — convert it to
         // a folder, overwriting the file in place.
@@ -101,6 +104,8 @@ public static class ProjectIO
         // Always write objects.json so a reader doesn't guess at absence vs
         // never-written. Empty list is written as {"version":1,"instances":[]}.
         ObjectIO.SaveInstances(folderPath, objects ?? Array.Empty<ObjectInstance>());
+        // Same deal for rivers.json.
+        RiverIO.Save(folderPath, rivers ?? Array.Empty<River>());
     }
 
     public static LoadResult Load(string path, string fileId)
@@ -138,7 +143,8 @@ public static class ProjectIO
         var kind = Enum.TryParse<DocumentKind>(index.Kind, ignoreCase: true, out var k)
             ? k : DocumentKind.Scene;
         var objects = ObjectIO.LoadInstances(folderPath);
-        return new LoadResult { World = world, Kind = kind, Objects = objects };
+        var rivers = RiverIO.Load(folderPath);
+        return new LoadResult { World = world, Kind = kind, Objects = objects, Rivers = rivers };
     }
 
     private static void WriteChunkPngs(string chunksDir, Chunk ch)
