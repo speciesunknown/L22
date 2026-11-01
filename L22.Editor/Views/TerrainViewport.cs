@@ -427,37 +427,37 @@ public class TerrainViewport : OpenGlControlBase
     {
         if (r.Vertices.Count >= 2)
         {
-            for (int i = 0; i < r.Vertices.Count - 1; i++)
-                AddSegment(verts, idx, r.Vertices[i], r.Vertices[i + 1]);
+            // Walk the bezier-sampled polyline, not the control points, so
+            // the ribbon curves between vertices rather than cutting
+            // corners.
+            var line = BezierSampler.Sample(r);
+            for (int i = 0; i < line.Count - 1; i++)
+                AddSampledSegment(verts, idx, line[i], line[i + 1]);
         }
         foreach (var b in r.Branches) AddRiver(verts, idx, b);
     }
 
-    private void AddSegment(System.Collections.Generic.List<float> verts,
-                             System.Collections.Generic.List<uint> idx,
-                             RiverVertex a, RiverVertex b)
+    private void AddSampledSegment(System.Collections.Generic.List<float> verts,
+                                    System.Collections.Generic.List<uint> idx,
+                                    BezierSampler.SampledPoint a, BezierSampler.SampledPoint b)
     {
         if (World is null) return;
-        float ax = a.WorldX, az = a.WorldZ;
-        float bx = b.WorldX, bz = b.WorldZ;
         float ay = TerrainMeshBuilder.SampleSurfaceY(World,
-                        (int)System.Math.Floor(ax), (int)System.Math.Floor(az)) + RiverLiftY;
+                        (int)System.Math.Floor(a.X), (int)System.Math.Floor(a.Z)) + RiverLiftY;
         float by = TerrainMeshBuilder.SampleSurfaceY(World,
-                        (int)System.Math.Floor(bx), (int)System.Math.Floor(bz)) + RiverLiftY;
-        float dx = bx - ax, dz = bz - az;
+                        (int)System.Math.Floor(b.X), (int)System.Math.Floor(b.Z)) + RiverLiftY;
+        float dx = b.X - a.X, dz = b.Z - a.Z;
         float len = MathF.Sqrt(dx * dx + dz * dz);
         if (len < 1e-5f) return;
-        float nx = -dz / len, nz = dx / len;  // left-hand perpendicular on XZ
-        float wa = MathF.Max(0.01f, a.WidthWorld) * 0.5f;
-        float wb = MathF.Max(0.01f, b.WidthWorld) * 0.5f;
+        float nx = -dz / len, nz = dx / len;
+        float wa = MathF.Max(0.01f, a.Width) * 0.5f;
+        float wb = MathF.Max(0.01f, b.Width) * 0.5f;
 
         uint baseIdx = (uint)(verts.Count / 3);
-        // v0 = a + perp*wa (left), v1 = a - perp*wa (right)
-        verts.Add(ax + nx * wa); verts.Add(ay); verts.Add(az + nz * wa);
-        verts.Add(ax - nx * wa); verts.Add(ay); verts.Add(az - nz * wa);
-        verts.Add(bx + nx * wb); verts.Add(by); verts.Add(bz + nz * wb);
-        verts.Add(bx - nx * wb); verts.Add(by); verts.Add(bz - nz * wb);
-        // two triangles, CCW from above
+        verts.Add(a.X + nx * wa); verts.Add(ay); verts.Add(a.Z + nz * wa);
+        verts.Add(a.X - nx * wa); verts.Add(ay); verts.Add(a.Z - nz * wa);
+        verts.Add(b.X + nx * wb); verts.Add(by); verts.Add(b.Z + nz * wb);
+        verts.Add(b.X - nx * wb); verts.Add(by); verts.Add(b.Z - nz * wb);
         idx.Add(baseIdx + 0); idx.Add(baseIdx + 2); idx.Add(baseIdx + 1);
         idx.Add(baseIdx + 1); idx.Add(baseIdx + 2); idx.Add(baseIdx + 3);
     }

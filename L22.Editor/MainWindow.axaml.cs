@@ -983,11 +983,16 @@ public partial class MainWindow : Window
     {
         if (r.Vertices.Count >= 2)
         {
-            var p0 = toScreen(r.Vertices[0].WorldX, r.Vertices[0].WorldZ);
-            ctx.BeginFigure(p0, isFilled: false);
-            for (int i = 1; i < r.Vertices.Count; i++)
-                ctx.LineTo(toScreen(r.Vertices[i].WorldX, r.Vertices[i].WorldZ));
-            ctx.EndFigure(isClosed: false);
+            // Draw the bezier-sampled centreline, not the control polyline,
+            // so the overlay matches the ribbon in the GL view.
+            var line = L22.Editor.Models.Rivers.BezierSampler.Sample(r);
+            if (line.Count > 0)
+            {
+                ctx.BeginFigure(toScreen(line[0].X, line[0].Z), isFilled: false);
+                for (int i = 1; i < line.Count; i++)
+                    ctx.LineTo(toScreen(line[i].X, line[i].Z));
+                ctx.EndFigure(isClosed: false);
+            }
         }
         // Draw each vertex handle as a filled square at the centre, plus a
         // ring whose radius equals the vertex's width/2 in world units

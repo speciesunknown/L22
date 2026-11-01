@@ -33,10 +33,18 @@ public static class TerrainMeshBuilder
 
         var positions = new Vector3[vside * vside];
         var normals = new Vector3[vside * vside];
-        // Per-vertex "how much is this vertex inside a river band?" in [0, 1]
-        // — used by the colour pass to tint the bed blue-brown and by the
-        // caller to know which cells are "riverbed" for export.
         var riverInfluence = new float[vside * vside];
+
+        // Sample each river's bezier curves once per chunk — gives the
+        // erosion band a smooth polyline instead of straight segments
+        // between control points. Shared with the normal pass below via
+        // the local `sampled` list.
+        List<List<BezierSampler.SampledPoint>>? sampled = null;
+        if (rivers is { Count: > 0 })
+        {
+            sampled = new List<List<BezierSampler.SampledPoint>>();
+            foreach (var r in rivers) sampled.AddRange(BezierSampler.SampleTree(r));
+        }
 
         for (int vy = 0; vy < vside; vy++)
         for (int vx = 0; vx < vside; vx++)
@@ -45,12 +53,10 @@ public static class TerrainMeshBuilder
             int wy = baseY + vy;
             var (jx, jz) = Jitter.Offset(wx, wy);
             float h = SampleVertexElevation(world, wx, wy) * ElevationScale;
-            // Erosion: lower Y proportional to how close the vertex is to
-            // the river centreline within its width.
             float wxWorld = wx + jx;
             float wzWorld = wy + jz;
-            float influence = rivers is null ? 0f
-                : ComputeRiverInfluence(rivers, wxWorld, wzWorld);
+            float influence = sampled is null ? 0f
+                : BezierSampler.Influence(sampled, wxWorld, wzWorld);
             if (influence > 0f) h -= influence * RiverbedDepth;
             riverInfluence[vy * vside + vx] = influence;
             positions[vy * vside + vx] = new Vector3(wxWorld, h, wzWorld);
@@ -146,7 +152,10 @@ public static class TerrainMeshBuilder
         => SampleVertexElevation(world, wx, wy) * ElevationScale;
 
     // World-space surface Y with any river erosion applied. Used by the
-    // normal pass so bank slopes shade correctly.
+    // normal pass so bank slopes shade correctly. Walks straight segments
+    // (not bezier) — called per-vertex and bezier sampling would quadruple
+    // the normal pass cost. The visual gap is invisible once positions
+    // themselves are bezier-shaped.
     private static float ErodedWorldHeight(World.World world, int wx, int wy,
                                             IReadOnlyList<River>? rivers)
     {
