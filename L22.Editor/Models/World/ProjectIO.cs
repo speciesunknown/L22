@@ -105,7 +105,13 @@ public static class ProjectIO
         // never-written. Empty list is written as {"version":1,"instances":[]}.
         ObjectIO.SaveInstances(folderPath, objects ?? Array.Empty<ObjectInstance>());
         // Same deal for rivers.json.
-        RiverIO.Save(folderPath, rivers ?? Array.Empty<River>());
+        var riverList = rivers ?? Array.Empty<River>();
+        RiverIO.Save(folderPath, riverList);
+
+        // Phase 6 export: write riverbed.png + riverbed.obj under export/
+        // every save, so the game can pick them up without a separate step.
+        if (riverList.Count > 0)
+            RiverExporter.Export(folderPath, world, (IReadOnlyList<River>)riverList);
     }
 
     public static LoadResult Load(string path, string fileId)

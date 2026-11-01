@@ -642,13 +642,17 @@ public partial class MainWindow : Window
 
         // Scenario 2: if a vertex is selected, the next empty-space click
         // spawns a branch starting at that vertex's position and extending
-        // to the new point.
+        // to the new point. The branch's anchor copies the parent's bezier
+        // out-handle so the fork flows naturally away from the parent at
+        // the selection — per journey update "defaults to the flow
+        // direction of the node I selected".
         if (ctx.SelectedRiverVertex is { } sel)
         {
             var parent = FindRiverRecursive(ctx, sel.riverId);
             if (parent is not null && sel.index >= 0 && sel.index < parent.Vertices.Count)
             {
                 var anchor = parent.Vertices[sel.index];
+                var flow = GetFlowDirectionAt(parent, sel.index);
                 var branch = new L22.Editor.Models.Rivers.River
                 {
                     Id = Guid.NewGuid().ToString("N"),
@@ -661,14 +665,21 @@ public partial class MainWindow : Window
                             CellX = anchor.CellX, CellY = anchor.CellY,
                             SubCellX = anchor.SubCellX, SubCellY = anchor.SubCellY,
                             WidthWorld = anchor.WidthWorld,
+                            BezierHandleOut = flow,
                         },
                         vertex,
                     },
                 };
                 var bCmd = new L22.Editor.Models.Commands.AddBranchCommand(ctx, parent.Id, branch);
                 ctx.History.ExecuteAndPush(bCmd);
-                // Keep selection on the anchor so another click extends the
-                // same branch.
+                // Move the selection to the tail vertex of the new branch
+                // so the next click *extends* this branch (natural flow),
+                // rather than silently creating a sibling branch off the
+                // original anchor.
+                ctx.SelectedRiverVertex = (branch.Id, 1);
+                ctx.RaiseSelectedRiverVertexChanged();
+                RefreshRiverVertexPanel();
+                RefreshRiverOverlay();
                 return;
             }
         }
@@ -737,13 +748,40 @@ public partial class MainWindow : Window
 
     // Push the command only when the user lets go of the slider — avoids
     // flooding the history stack with one command per sub-pixel drag.
-    private void OnRiverWidthCommit(object? sender, Avalonia.Input.PointerCaptureLostEventArgs e)
+    // Fires on PointerCaptureLost (end of mouse drag / click-release on
+    // the track) and on LostFocus (keyboard-arrows then tab away).
+    private void OnRiverWidthCommit(object? sender, RoutedEventArgs e)
     {
         var ctx = ViewModel.Active?.Context;
         if (ctx?.SelectedRiverVertex is not { } sel) return;
+        var r = FindRiverRecursive(ctx, sel.riverId);
+        if (r is null || sel.index < 0 || sel.index >= r.Vertices.Count) return;
+        float before = r.Vertices[sel.index].WidthWorld;
+        float after = (float)SlRiverWidth.Value;
+        if (System.Math.Abs(before - after) < 1e-4f) return;  // no-op guard
         var cmd = new L22.Editor.Models.Commands.SetRiverVertexWidthCommand(
-            ctx, sel.riverId, sel.index, (float)SlRiverWidth.Value);
+            ctx, sel.riverId, sel.index, after);
         ctx.History.ExecuteAndPush(cmd);
+    }
+
+    // Local flow direction at a river vertex: tangent at index i. If i is
+    // the last vertex, falls back to (vi - vi-1); if first, (vi+1 - vi).
+    // Scale is tiny — this feeds a BezierHandleOut, which is a short
+    // tangent offset not a full segment.
+    private static System.Numerics.Vector2 GetFlowDirectionAt(
+        L22.Editor.Models.Rivers.River river, int index)
+    {
+        if (river.Vertices.Count < 2) return System.Numerics.Vector2.Zero;
+        var cur = river.Vertices[index];
+        L22.Editor.Models.Rivers.RiverVertex a, b;
+        if (index + 1 < river.Vertices.Count) { a = cur; b = river.Vertices[index + 1]; }
+        else                                   { a = river.Vertices[index - 1]; b = cur; }
+        float dx = b.WorldX - a.WorldX;
+        float dz = b.WorldZ - a.WorldZ;
+        float len = System.MathF.Sqrt(dx * dx + dz * dz);
+        if (len < 1e-5f) return System.Numerics.Vector2.Zero;
+        float scale = 0.5f;
+        return new System.Numerics.Vector2(dx / len * scale, dz / len * scale);
     }
 
     private static L22.Editor.Models.Rivers.River? FindRiverRecursive(EditorContext ctx, string id)
