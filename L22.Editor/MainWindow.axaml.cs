@@ -888,8 +888,15 @@ public partial class MainWindow : Window
             return;
         }
 
+        // Journey item 10: "radius from the centre is its weighting".
+        // Single-vertex handle drag couples direction + width — handle
+        // magnitude = half-width. Width slider still exposes a numeric
+        // input for fine tweaks.
+        float afterWidth = 2f * (float)System.Math.Sqrt(after.X * after.X + after.Y * after.Y);
+        afterWidth = System.Math.Clamp(afterWidth, 0.1f, 50f);
+        float beforeWidth = r.Vertices[index].WidthWorld;
         var cmd = new L22.Editor.Models.Commands.SetRiverVertexHandleCommand(
-            ctx, riverId, index, before, after);
+            ctx, riverId, index, before, after, beforeWidth, afterWidth);
         ctx.History.ExecuteAndPush(cmd);
     }
 

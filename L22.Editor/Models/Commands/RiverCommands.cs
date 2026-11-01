@@ -102,18 +102,35 @@ public sealed class SetRiverVertexHandleCommand : IEditorCommand
     private readonly string _riverId;
     private readonly int _index;
     private readonly System.Numerics.Vector2 _before, _after;
-    public string Name => "Set river vertex handle";
+    private readonly float _beforeWidth, _afterWidth;
+    // null → don't touch width (multi-select direction edits).
+    private readonly bool _changesWidth;
+    public string Name => _changesWidth ? "Set river handle + width" : "Set river vertex handle";
 
     public SetRiverVertexHandleCommand(EditorContext ctx, string riverId, int index,
                                         System.Numerics.Vector2 before, System.Numerics.Vector2 after)
     {
         _ctx = ctx; _riverId = riverId; _index = index; _before = before; _after = after;
+        _changesWidth = false;
     }
+
+    // Overload for the "handle magnitude = half-width" coupling used in
+    // single-vertex drags — journey item 10 ("radius from the centre is
+    // its weighting"). Both fields are captured so undo flips them atomically.
+    public SetRiverVertexHandleCommand(EditorContext ctx, string riverId, int index,
+                                        System.Numerics.Vector2 before, System.Numerics.Vector2 after,
+                                        float beforeWidth, float afterWidth)
+    {
+        _ctx = ctx; _riverId = riverId; _index = index; _before = before; _after = after;
+        _beforeWidth = beforeWidth; _afterWidth = afterWidth; _changesWidth = true;
+    }
+
     public void Execute(World.World world)
     {
         var r = FindAnywhere(_ctx, _riverId);
         if (r is null || _index < 0 || _index >= r.Vertices.Count) return;
         r.Vertices[_index].BezierHandleOut = _after;
+        if (_changesWidth) r.Vertices[_index].WidthWorld = _afterWidth;
         _ctx.RaiseRiversChanged();
     }
     public void Undo(World.World world)
@@ -121,6 +138,7 @@ public sealed class SetRiverVertexHandleCommand : IEditorCommand
         var r = FindAnywhere(_ctx, _riverId);
         if (r is null || _index < 0 || _index >= r.Vertices.Count) return;
         r.Vertices[_index].BezierHandleOut = _before;
+        if (_changesWidth) r.Vertices[_index].WidthWorld = _beforeWidth;
         _ctx.RaiseRiversChanged();
     }
     private static River? FindAnywhere(EditorContext ctx, string id)
