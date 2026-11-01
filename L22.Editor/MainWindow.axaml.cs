@@ -470,14 +470,27 @@ public partial class MainWindow : Window
     {
         if (_objectsBoundContext is not null)
         {
-            _objectsBoundContext.ObjectsChanged -= RefreshObjectList;
+            _objectsBoundContext.ObjectsChanged -= OnBoundObjectsChanged;
             _objectsBoundContext.Prefabs.PrefabsChanged -= RefreshPrefabList;
         }
         _objectsBoundContext = ctx;
-        ctx.ObjectsChanged += RefreshObjectList;
+        ctx.ObjectsChanged += OnBoundObjectsChanged;
         ctx.Prefabs.PrefabsChanged += RefreshPrefabList;
         RefreshObjectList();
         RefreshPrefabList();
+    }
+
+    // Any object mutation (place / delete / modal-edit / undo / redo) comes
+    // through here. Rebuild the list, then re-point the property tree at the
+    // currently-selected object's PropertyOverrides — EditInstanceCommand
+    // swaps the whole list reference on undo, so the TreeView would otherwise
+    // keep showing the pre-undo items.
+    private void OnBoundObjectsChanged()
+    {
+        RefreshObjectList();
+        if (PropertyTree is null) return;
+        var inst = SelectedObjectInstance();
+        PropertyTree.ItemsSource = inst?.PropertyOverrides;
     }
 
     private string? _selectedPrefabId;
@@ -790,10 +803,8 @@ public partial class MainWindow : Window
         }
         var cmd = new L22.Editor.Models.Commands.EditPropertyCommand(ctx, _editingNode, newText, newNumber);
         ctx.History.ExecuteAndPush(cmd);
-        // Reselecting the row re-syncs the tree's display line.
-        var idx = ObjectList?.SelectedIndex ?? -1;
-        if (idx >= 0 && idx < ctx.Objects.Count)
-            PropertyTree.ItemsSource = ctx.Objects[idx].PropertyOverrides;
+        // The command raises ObjectsChanged, which OnBoundObjectsChanged
+        // picks up and re-points PropertyTree.ItemsSource for us.
     }
 
     private void OnRevertPropertyEdit(object? sender, RoutedEventArgs e)
