@@ -1,6 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:objects="using:L22.Editor.Models.Objects"
+        xmlns:vm="using:L22.Editor.ViewModels"
         x:Class="L22.Editor.Views.ObjectEditorDialog"
         Title="Edit"
         Width="580" Height="640"
@@ -66,7 +67,7 @@
             <ScrollViewer>
                 <TreeView Name="PropTree" Background="Transparent" BorderThickness="0">
                     <TreeView.ItemTemplate>
-                        <TreeDataTemplate DataType="objects:PropertyNode" ItemsSource="{Binding Children}">
+                        <TreeDataTemplate DataType="vm:PropertyNodeVm" ItemsSource="{Binding Children}">
                             <StackPanel Orientation="Horizontal" Spacing="6" Margin="2,1">
                                 <Border Background="#2B303A" CornerRadius="2" Padding="4,2" MinWidth="60">
                                     <TextBlock Text="{Binding Kind}" FontSize="10" Foreground="#CCC"

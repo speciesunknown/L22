@@ -22,7 +22,6 @@ WHEN I select it
 THEN it's prefab is selected
 AND I see an "Edit" button next to the selection.
 
-
 GIVEN an object is selected
 AND it's in viewport on the 3d view
 THEN the 3d view shows a translucent yellow box around it
