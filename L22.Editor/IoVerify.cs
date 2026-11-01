@@ -168,15 +168,45 @@ internal static class IoVerify
         };
     }
 
+    // Direct field compare — a JSON-string compare masks the Vector2
+    // round-trip bug the audit found (both sides empty → strings match
+    // → test passes while data is silently lost).
     private static string? CompareRivers(List<River> a, List<River> b)
     {
         if (a.Count != b.Count) return $"river count differs: {a.Count} vs {b.Count}";
-        var opts = new JsonSerializerOptions { WriteIndented = false };
         for (int i = 0; i < a.Count; i++)
         {
-            var sa = JsonSerializer.Serialize(a[i], opts);
-            var sb = JsonSerializer.Serialize(b[i], opts);
-            if (sa != sb) return $"river #{i} differs: {sa} vs {sb}";
+            var r = CompareRiver(a[i], b[i], $"#{i}");
+            if (r is not null) return r;
+        }
+        return null;
+    }
+
+    private static string? CompareRiver(River a, River b, string path)
+    {
+        if (a.Id != b.Id) return $"river {path}.Id differs: {a.Id} vs {b.Id}";
+        if (a.Name != b.Name) return $"river {path}.Name differs: {a.Name} vs {b.Name}";
+        if (a.ForkFromIndex != b.ForkFromIndex) return $"river {path}.ForkFromIndex differs: {a.ForkFromIndex} vs {b.ForkFromIndex}";
+        if (a.Vertices.Count != b.Vertices.Count) return $"river {path}.Vertices count differs: {a.Vertices.Count} vs {b.Vertices.Count}";
+        for (int i = 0; i < a.Vertices.Count; i++)
+        {
+            var va = a.Vertices[i];
+            var vb = b.Vertices[i];
+            if (va.CellX != vb.CellX)             return $"river {path}.Vertices[{i}].CellX differs";
+            if (va.CellY != vb.CellY)             return $"river {path}.Vertices[{i}].CellY differs";
+            if (va.SubCellX != vb.SubCellX)       return $"river {path}.Vertices[{i}].SubCellX differs";
+            if (va.SubCellY != vb.SubCellY)       return $"river {path}.Vertices[{i}].SubCellY differs";
+            if (va.WidthWorld != vb.WidthWorld)   return $"river {path}.Vertices[{i}].WidthWorld differs";
+            if (va.BezierHandleIn != vb.BezierHandleIn)
+                return $"river {path}.Vertices[{i}].BezierHandleIn differs: {va.BezierHandleIn} vs {vb.BezierHandleIn}";
+            if (va.BezierHandleOut != vb.BezierHandleOut)
+                return $"river {path}.Vertices[{i}].BezierHandleOut differs: {va.BezierHandleOut} vs {vb.BezierHandleOut}";
+        }
+        if (a.Branches.Count != b.Branches.Count) return $"river {path}.Branches count differs: {a.Branches.Count} vs {b.Branches.Count}";
+        for (int i = 0; i < a.Branches.Count; i++)
+        {
+            var r = CompareRiver(a.Branches[i], b.Branches[i], $"{path}.Branches[{i}]");
+            if (r is not null) return r;
         }
         return null;
     }

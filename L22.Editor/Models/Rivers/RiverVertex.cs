@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Text.Json.Serialization;
 
 namespace L22.Editor.Models.Rivers;
 
@@ -19,6 +20,8 @@ public sealed class RiverVertex
     public Vector2 BezierHandleOut { get; set; }
 
     // World X / Z the vertex actually sits at, derived from Cell + SubCell.
-    public float WorldX => CellX + SubCellX;
-    public float WorldZ => CellY + SubCellY;
+    // JsonIgnore keeps the derived fields out of rivers.json — they'd just
+    // bloat the file and confuse a future reader looking for authority.
+    [JsonIgnore] public float WorldX => CellX + SubCellX;
+    [JsonIgnore] public float WorldZ => CellY + SubCellY;
 }
