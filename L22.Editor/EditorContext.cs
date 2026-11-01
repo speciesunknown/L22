@@ -28,6 +28,13 @@ public sealed class EditorContext
     public event System.Action? ObjectsChanged;
     public void RaiseObjectsChanged() => ObjectsChanged?.Invoke();
 
+    // In-viewport object selection. Drag in the top-down with the Object
+    // tool active rubber-bands a selection; clicking without a drag still
+    // places a new one. SelectionChanged fires after the set mutates.
+    public System.Collections.Generic.HashSet<string> SelectedObjectIds { get; } = new();
+    public event System.Action? ObjectSelectionChanged;
+    public void RaiseObjectSelectionChanged() => ObjectSelectionChanged?.Invoke();
+
     public EditorContext(string fileId) : this(new World(fileId)) { }
 
     public EditorContext(World world)

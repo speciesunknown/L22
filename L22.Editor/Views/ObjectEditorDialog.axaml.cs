@@ -30,6 +30,36 @@ public partial class ObjectEditorDialog : Window
         TxtCodeName.Text = payload.CodeName;
         _roots = new ObservableCollection<PropertyNode>(payload.Properties);
         PropTree.ItemsSource = _roots;
+
+        if (payload.ShowPrefabPicker)
+        {
+            GridPrefabPicker.IsVisible = true;
+            CbPrefabPicker.ItemsSource = payload.AvailablePrefabs;
+            CbPrefabPicker.ValueMemberBinding = new Avalonia.Data.Binding(nameof(ObjectPrefab.DisplayName));
+            CbPrefabPicker.ItemFilter = (search, item) =>
+            {
+                if (item is not ObjectPrefab p) return false;
+                if (string.IsNullOrEmpty(search)) return true;
+                var s = search.ToLowerInvariant();
+                return (p.DisplayName?.ToLowerInvariant().Contains(s) ?? false)
+                    || (p.ForeignIdentifier?.ToLowerInvariant().Contains(s) ?? false)
+                    || (p.Id?.ToLowerInvariant().Contains(s) ?? false);
+            };
+            if (!string.IsNullOrEmpty(payload.SelectedPrefabId))
+            {
+                foreach (var pf in payload.AvailablePrefabs)
+                {
+                    if (pf.Id == payload.SelectedPrefabId)
+                    {
+                        CbPrefabPicker.SelectedItem = pf;
+                        BtnEditPrefab.IsVisible = true;
+                        break;
+                    }
+                }
+            }
+            CbPrefabPicker.SelectionChanged += (_, _) =>
+                BtnEditPrefab.IsVisible = CbPrefabPicker.SelectedItem is ObjectPrefab;
+        }
     }
 
     public static async Task<bool> ShowAsync(Window owner, ObjectEditorPayload payload)
@@ -45,6 +75,16 @@ public partial class ObjectEditorDialog : Window
         _payload.DisplayName = TxtDisplayName.Text ?? "";
         _payload.CodeName = TxtCodeName.Text ?? "";
         _payload.Properties = new List<PropertyNode>(_roots);
+        if (_payload.ShowPrefabPicker)
+        {
+            _payload.SelectedPrefabId = CbPrefabPicker.SelectedItem is ObjectPrefab pf ? pf.Id : null;
+        }
+    }
+
+    private void OnEditPrefabFromDialog(object? sender, RoutedEventArgs e)
+    {
+        if (CbPrefabPicker.SelectedItem is ObjectPrefab pf)
+            _payload.RaiseEditPrefabRequested(pf.Id);
     }
 
     private void OnOk(object? sender, RoutedEventArgs e)
@@ -113,4 +153,17 @@ public sealed class ObjectEditorPayload
     public string DisplayName { get; set; } = "";
     public string CodeName { get; set; } = "";
     public List<PropertyNode> Properties { get; set; } = new();
+
+    // Prefab picker. ShowPrefabPicker=true turns on the AutoCompleteBox
+    // + "Edit…" row (instance editing path); false hides it (prefab
+    // editing itself). AvailablePrefabs populates the dropdown; the
+    // dialog writes back SelectedPrefabId on OK.
+    public bool ShowPrefabPicker { get; init; }
+    public System.Collections.Generic.List<L22.Editor.Models.Objects.ObjectPrefab> AvailablePrefabs { get; init; } = new();
+    public string? SelectedPrefabId { get; set; }
+    // Fired when the user clicks "Edit…" next to the picker. The caller
+    // opens the prefab editor on the given prefab id, as a child modal of
+    // the still-open instance editor.
+    public event System.Action<string>? EditPrefabRequested;
+    internal void RaiseEditPrefabRequested(string id) => EditPrefabRequested?.Invoke(id);
 }

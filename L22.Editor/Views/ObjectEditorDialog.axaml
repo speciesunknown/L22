@@ -18,6 +18,15 @@
                     <TextBlock Name="LblCodeName" Text="Code name:" Foreground="#AAA" FontSize="11" VerticalAlignment="Center"/>
                     <TextBox Name="TxtCodeName" Grid.Column="1"/>
                 </Grid>
+                <Grid Name="GridPrefabPicker" ColumnDefinitions="110,*,Auto" ColumnSpacing="8" IsVisible="False">
+                    <TextBlock Text="Prefab:" Foreground="#AAA" FontSize="11" VerticalAlignment="Center"/>
+                    <AutoCompleteBox Name="CbPrefabPicker" Grid.Column="1" FontSize="11"
+                                     MinimumPrefixLength="0"
+                                     FilterMode="ContainsOrdinalCaseSensitive"
+                                     Watermark="(no prefab) · type to search"/>
+                    <Button Name="BtnEditPrefab" Grid.Column="2" Content="Edit…" Click="OnEditPrefabFromDialog"
+                            IsVisible="False"/>
+                </Grid>
             </StackPanel>
         </Border>
 

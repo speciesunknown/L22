@@ -273,7 +273,27 @@ public sealed class TerrainGlRenderer
 
         if (!keepDepthTest) gl.Disable(GL_DEPTH_TEST);
 
-        // Billboards first — alpha-blended, so draw them over cubes (same
+        // Selection ring: slightly larger yellow cube behind every selected
+        // object, drawn first so the real cube/billboard sits on top.
+        bool anySelectionRing = false;
+        foreach (var o in all)
+        {
+            if (!o.Selected) continue;
+            if (!anySelectionRing)
+            {
+                gl.UseProgram(_cubeProgram);
+                SetUniformMatrix4(gl, _uCubeView, view);
+                SetUniformMatrix4(gl, _uCubeProj, proj);
+                _extras.Uniform4f(_uCubeColor, 1.0f, 0.90f, 0.25f, 1.0f);  // yellow
+                gl.Uniform1f(_uCubeSize, 2.8f);
+                gl.BindVertexArray(_cubeVao);
+                anySelectionRing = true;
+            }
+            _extras.Uniform3f(_uCubeCenter, o.Position.X, o.Position.Y, o.Position.Z);
+            gl.DrawElements(GL_TRIANGLES, CubeIndices.Length, GlExtras.GL_UNSIGNED_INT, IntPtr.Zero);
+        }
+
+        // Billboards next — alpha-blended, so draw them over cubes (same
         // overlay layer anyway, order mostly matters for correctness of the
         // discard-based alpha fallback).
         bool anyBillboard = false;

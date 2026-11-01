@@ -57,10 +57,25 @@ public class TerrainViewport : OpenGlControlBase
     public bool DropperToolActive { get; set; }
     public event Action<int, int>? CellSampled;
 
-    // Place-object tool: left-click drops a new ObjectInstance at the
-    // picked cell. MainWindow sets this when the toolbar button lights up.
+    // Place-object tool: a click (no drag) drops a new ObjectInstance at
+    // the picked cell; a drag rubber-bands a selection over objects in
+    // the enclosed world-space rectangle.
     public bool PlaceObjectToolActive { get; set; }
     public event Action<int, int>? ObjectPlaceRequested;
+    public event Action<float, float, float, float>? ObjectBoxSelectRequested;
+    // Click on an existing object (no drag). Replaces selection with the
+    // single hit instance.
+    public event Action<string>? ObjectSingleSelectRequested;
+    // Double-click on an existing object. Opens the editor.
+    public event Action<string>? ObjectEditRequested;
+
+    // Press state for the object tool's click-vs-drag discrimination.
+    // Threshold is checked against raw pixels, not cells, so a scroll-
+    // induced sub-pixel drift during a click doesn't trip the drag.
+    private bool _objectGesturePressed;
+    private bool _objectGestureDragging;
+    private Point _objectGestureStart;
+    private const double ObjectDragThresholdPx = 4.0;
 
     // Last committed selection (populated on box-select release) — chunk
     // corner-grid coords, not per-cell vertices. Consumed by the right
@@ -159,6 +174,7 @@ public class TerrainViewport : OpenGlControlBase
         {
             _boundContext.ObjectsChanged -= OnObjectsChanged;
             _boundContext.Prefabs.PrefabsChanged -= OnObjectsChanged;
+            _boundContext.ObjectSelectionChanged -= OnObjectsChanged;
         }
         BindWorld(ctx.World, allowTools ? ctx.Tools : null);
         Objects = ctx.Objects;
@@ -166,6 +182,7 @@ public class TerrainViewport : OpenGlControlBase
         _boundContext = ctx;
         ctx.ObjectsChanged += OnObjectsChanged;
         ctx.Prefabs.PrefabsChanged += OnObjectsChanged;
+        ctx.ObjectSelectionChanged += OnObjectsChanged;
     }
 
     private void OnObjectsChanged() => RequestFrame();
@@ -293,19 +310,21 @@ public class TerrainViewport : OpenGlControlBase
     private GpuObjectInstance[]? ComputeGpuObjects()
     {
         if (Objects is null || Objects.Count == 0 || World is null) return null;
+        var selected = _boundContext?.SelectedObjectIds;
         var arr = new GpuObjectInstance[Objects.Count];
         for (int i = 0; i < Objects.Count; i++)
         {
             var o = Objects[i];
             float sy = TerrainMeshBuilder.SampleSurfaceY(World, o.CellX, o.CellY);
             var pos = new Vector3(o.CellX + 0.5f, sy + o.YOffsetWorld + CubeHalfEdge, o.CellY + 0.5f);
+            bool isSelected = selected?.Contains(o.Id) ?? false;
 
             var icon = o.IconOverride;
             if (icon is null && Prefabs?.Find(o.PrefabId) is { Icon: { } prefabIcon })
                 icon = prefabIcon;
             if (icon is null || string.IsNullOrEmpty(icon.ImagePath))
             {
-                arr[i] = new GpuObjectInstance(pos, null, Vector4.Zero);
+                arr[i] = new GpuObjectInstance(pos, null, Vector4.Zero, isSelected);
                 continue;
             }
             var path = icon.ImagePath;
@@ -317,7 +336,7 @@ public class TerrainViewport : OpenGlControlBase
             float v0 = (float)icon.CellRow / rows;
             float u1 = (float)(icon.CellCol + 1) / cols;
             float v1 = (float)(icon.CellRow + 1) / rows;
-            arr[i] = new GpuObjectInstance(pos, path, new Vector4(u0, v0, u1, v1));
+            arr[i] = new GpuObjectInstance(pos, path, new Vector4(u0, v0, u1, v1), isSelected);
         }
         return arr;
     }
@@ -446,6 +465,19 @@ public class TerrainViewport : OpenGlControlBase
         HandleWindowPointerReleased(e);
     }
 
+    public void HandleWindowDoubleTapped(Point pos)
+    {
+        if (!TopDown || !PlaceObjectToolActive) return;
+        var hit = PickObjectAt(pos);
+        if (hit is not null) ObjectEditRequested?.Invoke(hit.Id);
+    }
+
+    protected override void OnDoubleTapped(Avalonia.Input.TappedEventArgs e)
+    {
+        base.OnDoubleTapped(e);
+        HandleWindowDoubleTapped(e.GetPosition(this));
+    }
+
     // Public window-level handlers. MainWindow dispatches here because the GL
     // control's own hit-test is unreliable, so we can't count on the protected
     // overrides firing.
@@ -470,8 +502,10 @@ public class TerrainViewport : OpenGlControlBase
         }
         if (props.IsLeftButtonPressed && PlaceObjectToolActive && TopDown)
         {
-            var cell = PickWorldCell(pos);
-            if (cell.HasValue) ObjectPlaceRequested?.Invoke(cell.Value.x, cell.Value.y);
+            // Defer the decision until release: click → place, drag → select.
+            _objectGesturePressed = true;
+            _objectGestureDragging = false;
+            _objectGestureStart = pos;
             return;
         }
         if (props.IsLeftButtonPressed && CornerToolActive && TopDown)
@@ -535,6 +569,26 @@ public class TerrainViewport : OpenGlControlBase
             return;
         }
 
+        if (_objectGesturePressed)
+        {
+            var d = pos - _objectGestureStart;
+            if (!_objectGestureDragging
+                && (Math.Abs(d.X) > ObjectDragThresholdPx || Math.Abs(d.Y) > ObjectDragThresholdPx))
+            {
+                _objectGestureDragging = true;
+            }
+            if (_objectGestureDragging)
+            {
+                double x0 = Math.Min(_objectGestureStart.X, pos.X);
+                double y0 = Math.Min(_objectGestureStart.Y, pos.Y);
+                double x1 = Math.Max(_objectGestureStart.X, pos.X);
+                double y1 = Math.Max(_objectGestureStart.Y, pos.Y);
+                BoxSelectRect = new Avalonia.Rect(x0, y0, x1 - x0, y1 - y0);
+                BoxSelectVisualChanged?.Invoke();
+            }
+            return;
+        }
+
         if (_rotating)
         {
             var d = pos - _rotateLast;
@@ -586,6 +640,55 @@ public class TerrainViewport : OpenGlControlBase
             BoxSelectVisualChanged?.Invoke();
             RequestFrame();
         }
+        if (_objectGesturePressed && e.InitialPressMouseButton == MouseButton.Left)
+        {
+            _objectGesturePressed = false;
+            if (_objectGestureDragging)
+            {
+                CommitObjectBoxSelection();
+            }
+            else
+            {
+                // Click (not drag): hit existing object → single-select;
+                // empty space → drop a new one.
+                var hit = PickObjectAt(_objectGestureStart);
+                if (hit is not null)
+                {
+                    ObjectSingleSelectRequested?.Invoke(hit.Id);
+                }
+                else
+                {
+                    var cell = PickWorldCell(_objectGestureStart);
+                    if (cell.HasValue) ObjectPlaceRequested?.Invoke(cell.Value.x, cell.Value.y);
+                }
+            }
+            _objectGestureDragging = false;
+            BoxSelectRect = null;
+            BoxSelectVisualChanged?.Invoke();
+            RequestFrame();
+        }
+    }
+
+    // Translate the current pixel-space BoxSelectRect into a world-space
+    // XZ rectangle and raise ObjectBoxSelectRequested. Mirrors the math
+    // in CommitBoxSelection but for objects instead of chunk corners.
+    private void CommitObjectBoxSelection()
+    {
+        if (BoxSelectRect is not { } r) return;
+        int w = Math.Max(1, (int)Bounds.Width);
+        int h = Math.Max(1, (int)Bounds.Height);
+        float aspect = (float)w / h;
+        float halfH = Camera.OrthoHalfHeight;
+        float halfW = halfH * aspect;
+
+        double WorldAtX(double sx) => Camera.Position.X + (sx / w * 2.0 - 1.0) * halfW;
+        double WorldAtZ(double sy) => Camera.Position.Z + (1.0 - sy / h * 2.0) * -halfH;
+
+        double wx0 = WorldAtX(r.Left),  wx1 = WorldAtX(r.Right);
+        double wz0 = WorldAtZ(r.Top),   wz1 = WorldAtZ(r.Bottom);
+        if (wx0 > wx1) (wx0, wx1) = (wx1, wx0);
+        if (wz0 > wz1) (wz0, wz1) = (wz1, wz0);
+        ObjectBoxSelectRequested?.Invoke((float)wx0, (float)wz0, (float)wx1, (float)wz1);
     }
 
     private void CommitBoxSelection()
@@ -664,6 +767,16 @@ public class TerrainViewport : OpenGlControlBase
 
     private (int x, int y)? PickWorldCell(Point screenPt)
     {
+        var p = PickWorldPoint(screenPt);
+        if (p is null) return null;
+        return ((int)MathF.Floor(p.Value.x), (int)MathF.Floor(p.Value.y));
+    }
+
+    // Floating-point world XZ under the pointer. Used for picking which
+    // existing object a click sits on top of (hit-test radius is in world
+    // units, independent of zoom).
+    public (float x, float y)? PickWorldPoint(Point screenPt)
+    {
         int w = Math.Max(1, (int)Bounds.Width);
         int h = Math.Max(1, (int)Bounds.Height);
         float sx = ((float)screenPt.X / w) * 2f - 1f;
@@ -671,13 +784,10 @@ public class TerrainViewport : OpenGlControlBase
 
         if (TopDown)
         {
-            // Direct XZ mapping from NDC; no ray-plane needed.
             float aspect = (float)w / h;
             float hx = sx * Camera.OrthoHalfHeight * aspect;
             float hz = -sy * Camera.OrthoHalfHeight;   // screen up = -Z
-            float wx = Camera.Position.X + hx;
-            float wz = Camera.Position.Z + hz;
-            return ((int)MathF.Floor(wx), (int)MathF.Floor(wz));
+            return (Camera.Position.X + hx, Camera.Position.Z + hz);
         }
 
         var (origin, dir) = Camera.ScreenRay(sx, sy, (float)w / h);
@@ -685,6 +795,25 @@ public class TerrainViewport : OpenGlControlBase
         float t = -origin.Y / dir.Y;
         if (t < 0) return null;
         var hit = origin + dir * t;
-        return ((int)MathF.Floor(hit.X), (int)MathF.Floor(hit.Z));
+        return (hit.X, hit.Z);
+    }
+
+    // Nearest instance (by XZ distance) within ObjectPickRadius world units
+    // of the pointer. Null → nothing close enough.
+    private const float ObjectPickRadius = 1.5f;
+    private ObjectInstance? PickObjectAt(Point screenPt)
+    {
+        if (Objects is null || Objects.Count == 0) return null;
+        if (PickWorldPoint(screenPt) is not { } wp) return null;
+        ObjectInstance? best = null;
+        float bestD2 = ObjectPickRadius * ObjectPickRadius;
+        foreach (var o in Objects)
+        {
+            float dx = o.CellX + 0.5f - wp.x;
+            float dy = o.CellY + 0.5f - wp.y;
+            float d2 = dx * dx + dy * dy;
+            if (d2 <= bestD2) { bestD2 = d2; best = o; }
+        }
+        return best;
     }
 }

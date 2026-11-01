@@ -8,4 +8,5 @@ namespace L22.Editor.Views;
 public readonly record struct GpuObjectInstance(
     Vector3 Position,
     string? IconPath,
-    Vector4 IconUvRect);
+    Vector4 IconUvRect,
+    bool Selected = false);

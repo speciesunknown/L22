@@ -171,6 +171,7 @@
                              TextChanged="OnObjectSearchChanged"/>
                     <Border Background="#1C1F26" CornerRadius="4" Padding="2" MinHeight="120">
                         <ListBox Name="ObjectList" Background="Transparent" BorderThickness="0"
+                                 SelectionMode="Multiple"
                                  SelectionChanged="OnObjectListSelectionChanged"
                                  DoubleTapped="OnObjectListDoubleTapped">
                             <ListBox.ItemTemplate>

@@ -102,6 +102,9 @@ public partial class MainWindow : Window
         EditViewport.SelectionChanged += UpdateCornerPanel;
         EditViewport.CellSampled += OnCellSampled;
         EditViewport.ObjectPlaceRequested += OnObjectPlaceRequested;
+        EditViewport.ObjectBoxSelectRequested += OnObjectBoxSelectRequested;
+        EditViewport.ObjectSingleSelectRequested += OnObjectSingleSelectRequested;
+        EditViewport.ObjectEditRequested += OnObjectEditFromViewport;
 
         RegisterSliderBinding(SlRadius,    LblRadius,    TxtRadius,    v => { if (ViewModel.Brush is { } b) b.Radius = (int)Math.Round(v); }, v => ((int)Math.Round(v)).ToString());
         RegisterSliderBinding(SlStrength,  LblStrength,  TxtStrength,  v => { if (ViewModel.Brush is { } b) b.Strength = (float)v; },        v => v.ToString("0.00"));
@@ -623,21 +626,57 @@ public partial class MainWindow : Window
         var payload = new L22.Editor.Views.ObjectEditorPayload
         {
             Title = $"Edit object  ·  {inst.Id}",
-            SubjectLabel = $"Object  ·  cell ({inst.CellX}, {inst.CellY})  ·  prefab {inst.PrefabId}",
+            SubjectLabel = $"Object  ·  cell ({inst.CellX}, {inst.CellY})",
             CodeNameLabel = "Code name:",
             DisplayName = inst.NameOverride ?? "",
             CodeName = inst.CodeName ?? "",
             Properties = L22.Editor.Models.Objects.PropertyNode.DeepClone(inst.PropertyOverrides),
+            ShowPrefabPicker = true,
+            AvailablePrefabs = new System.Collections.Generic.List<L22.Editor.Models.Objects.ObjectPrefab>(ctx.Prefabs.All),
+            SelectedPrefabId = inst.PrefabId == "none" ? null : inst.PrefabId,
         };
-        bool ok = await L22.Editor.Views.ObjectEditorDialog.ShowAsync(this, payload);
+
+        var dialog = new L22.Editor.Views.ObjectEditorDialog(payload);
+        payload.EditPrefabRequested += async (prefabId) =>
+        {
+            var pf = ctx.Prefabs.Find(prefabId);
+            if (pf is null) return;
+            await OpenPrefabEditorNested(ctx, pf, dialog);
+            // Refresh available list — DisplayName may have changed.
+            // Simpler: just leave the picker as-is; user will see updates
+            // after dialog closes.
+        };
+        bool ok = await dialog.ShowDialog<bool>(this);
         if (!ok) return;
 
         var cmd = new L22.Editor.Models.Commands.EditInstanceCommand(
             ctx, inst,
             newName: string.IsNullOrEmpty(payload.DisplayName) ? null : payload.DisplayName,
             newCode: string.IsNullOrEmpty(payload.CodeName) ? null : payload.CodeName,
+            newPrefabId: payload.SelectedPrefabId,
             newProps: payload.Properties);
         ctx.History.ExecuteAndPush(cmd);
+    }
+
+    private async System.Threading.Tasks.Task OpenPrefabEditorNested(EditorContext ctx,
+        L22.Editor.Models.Objects.ObjectPrefab pf, Window owner)
+    {
+        var payload = new L22.Editor.Views.ObjectEditorPayload
+        {
+            Title = $"Edit prefab  ·  {pf.Id}",
+            SubjectLabel = $"Prefab  ·  id {pf.Id}",
+            CodeNameLabel = "Foreign id:",
+            DisplayName = pf.DisplayName ?? "",
+            CodeName = pf.ForeignIdentifier ?? "",
+            Properties = L22.Editor.Models.Objects.PropertyNode.DeepClone(pf.Properties),
+        };
+        var dlg = new L22.Editor.Views.ObjectEditorDialog(payload);
+        bool ok = await dlg.ShowDialog<bool>(owner);
+        if (!ok) return;
+        pf.DisplayName = payload.DisplayName;
+        pf.ForeignIdentifier = payload.CodeName;
+        pf.Properties = payload.Properties;
+        ctx.Prefabs.Upsert(pf);
     }
 
     private async void OnEditPrefabsClick(object? sender, RoutedEventArgs e)
@@ -875,6 +914,40 @@ public partial class MainWindow : Window
         {
             if (EditViewport.CameraFree) { EditViewport.SetCameraFree(false); e.Handled = true; return; }
             if (FreeViewport.CameraFree) { FreeViewport.SetCameraFree(false); e.Handled = true; return; }
+            // Esc also clears an in-scene object selection.
+            var ctx = ViewModel.Active?.Context;
+            if (ctx is { } c && c.SelectedObjectIds.Count > 0)
+            {
+                c.SelectedObjectIds.Clear();
+                c.RaiseObjectSelectionChanged();
+                SyncObjectListSelection();
+                EditViewport.RequestFrame();
+                FreeViewport.RequestFrame();
+                e.Handled = true;
+                return;
+            }
+        }
+        if (e.Key == Key.Delete)
+        {
+            var ctx = ViewModel.Active?.Context;
+            if (ctx is { } c && c.SelectedObjectIds.Count > 0)
+            {
+                // Snapshot — the Delete command we push mutates the list.
+                var ids = new List<string>(c.SelectedObjectIds);
+                foreach (var id in ids)
+                {
+                    var inst = c.Objects.Find(o => o.Id == id);
+                    if (inst is not null)
+                    {
+                        var cmd = new L22.Editor.Models.Commands.DeleteObjectCommand(c, inst);
+                        c.History.ExecuteAndPush(cmd);
+                    }
+                }
+                c.SelectedObjectIds.Clear();
+                c.RaiseObjectSelectionChanged();
+                e.Handled = true;
+                return;
+            }
         }
         if (e.KeyModifiers.HasFlag(KeyModifiers.Control))
         {
@@ -1133,6 +1206,71 @@ public partial class MainWindow : Window
         EditViewport.ClearSelectedCorners();
         EditViewportHost.Cursor = new Cursor(StandardCursorType.Cross);
         UpdateLayerUi();
+    }
+
+    private void OnObjectBoxSelectRequested(float wx0, float wz0, float wx1, float wz1)
+    {
+        var ctx = ViewModel.Active?.Context;
+        if (ctx is null) return;
+        ctx.SelectedObjectIds.Clear();
+        foreach (var o in ctx.Objects)
+        {
+            float cx = o.CellX + 0.5f;
+            float cz = o.CellY + 0.5f;
+            if (cx >= wx0 && cx <= wx1 && cz >= wz0 && cz <= wz1)
+                ctx.SelectedObjectIds.Add(o.Id);
+        }
+        ctx.RaiseObjectSelectionChanged();
+        SyncObjectListSelection();
+        EditViewport.RequestFrame();
+        FreeViewport.RequestFrame();
+    }
+
+    // Mirror the context's selected ids into the ObjectList's selection
+    // so a drag-select over the viewport highlights the matching rows.
+    private void SyncObjectListSelection()
+    {
+        if (ObjectList is null) return;
+        var ctx = ViewModel.Active?.Context;
+        if (ctx is null) return;
+        ObjectList.SelectedItems?.Clear();
+        for (int i = 0; i < _displayedObjects.Count; i++)
+            if (ctx.SelectedObjectIds.Contains(_displayedObjects[i].Id))
+                ObjectList.SelectedItems?.Add(ObjectList.Items[i]);
+    }
+
+    private void OnObjectSingleSelectRequested(string id)
+    {
+        var ctx = ViewModel.Active?.Context;
+        if (ctx is null) return;
+        ctx.SelectedObjectIds.Clear();
+        ctx.SelectedObjectIds.Add(id);
+        ctx.RaiseObjectSelectionChanged();
+        SyncObjectListSelection();
+        // Scroll the list to the clicked row and show its properties.
+        for (int i = 0; i < _displayedObjects.Count; i++)
+        {
+            if (_displayedObjects[i].Id == id)
+            {
+                ObjectList.SelectedIndex = i;
+                ObjectList.ScrollIntoView(ObjectList.Items[i]);
+                break;
+            }
+        }
+        EditViewport.RequestFrame();
+        FreeViewport.RequestFrame();
+    }
+
+    private async void OnObjectEditFromViewport(string id)
+    {
+        var ctx = ViewModel.Active?.Context;
+        if (ctx is null) return;
+        var inst = ctx.Objects.Find(o => o.Id == id);
+        if (inst is null) return;
+        // Select it, then open the modal — reuses OpenObjectEditor's
+        // "edit the currently-selected instance" entry point.
+        OnObjectSingleSelectRequested(id);
+        await OpenObjectEditor();
     }
 
     private void OnObjectPlaceRequested(int x, int y)

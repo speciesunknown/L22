@@ -83,12 +83,14 @@ public sealed class EditInstanceCommand : IEditorCommand
     private readonly ObjectInstance _instance;
     private readonly string? _beforeName, _afterName;
     private readonly string? _beforeCode, _afterCode;
+    private readonly string _beforePrefab, _afterPrefab;
     private readonly List<PropertyNode> _beforeProps, _afterProps;
 
     public string Name => $"Edit object {_instance.Id}";
 
     public EditInstanceCommand(EditorContext ctx, ObjectInstance instance,
-                               string? newName, string? newCode, List<PropertyNode> newProps)
+                               string? newName, string? newCode, string? newPrefabId,
+                               List<PropertyNode> newProps)
     {
         _ctx = ctx;
         _instance = instance;
@@ -96,6 +98,8 @@ public sealed class EditInstanceCommand : IEditorCommand
         _afterName = newName;
         _beforeCode = instance.CodeName;
         _afterCode = newCode;
+        _beforePrefab = instance.PrefabId;
+        _afterPrefab = string.IsNullOrEmpty(newPrefabId) ? "none" : newPrefabId!;
         _beforeProps = PropertyNode.DeepClone(instance.PropertyOverrides);
         _afterProps = newProps;
     }
@@ -104,6 +108,7 @@ public sealed class EditInstanceCommand : IEditorCommand
     {
         _instance.NameOverride = _afterName;
         _instance.CodeName = _afterCode;
+        _instance.PrefabId = _afterPrefab;
         _instance.PropertyOverrides = _afterProps;
         _ctx.RaiseObjectsChanged();
     }
@@ -112,6 +117,7 @@ public sealed class EditInstanceCommand : IEditorCommand
     {
         _instance.NameOverride = _beforeName;
         _instance.CodeName = _beforeCode;
+        _instance.PrefabId = _beforePrefab;
         _instance.PropertyOverrides = PropertyNode.DeepClone(_beforeProps);
         _ctx.RaiseObjectsChanged();
     }
