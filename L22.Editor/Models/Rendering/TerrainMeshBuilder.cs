@@ -193,7 +193,13 @@ public static class TerrainMeshBuilder
             float half = MathF.Max(0.01f, width * 0.5f);
             if (dist < half)
             {
-                float influence = 1f - (dist / half);
+                // Smoothstep the linear ramp so the bank reads as a cupped
+                // channel instead of a straight-walled slot — flat near
+                // the centreline, steeper at the bank, zero influence at
+                // the edge. Keeps the same max depth without visible
+                // stair-stepping on diagonal rivers.
+                float linear = 1f - (dist / half);
+                float influence = linear * linear * (3f - 2f * linear);
                 if (influence > best) best = influence;
             }
         }
