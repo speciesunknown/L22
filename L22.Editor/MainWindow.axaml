@@ -74,6 +74,13 @@
                         <TextBlock Text="Prefab" HorizontalAlignment="Center" FontSize="10"/>
                     </StackPanel>
                 </Button>
+                <Button Name="BtnToolRiver" Click="OnSelectToolRiver" HorizontalAlignment="Stretch" Padding="4,6"
+                        ToolTip.Tip="Click in the top-down view to add river vertices">
+                    <StackPanel>
+                        <TextBlock Text="〰" HorizontalAlignment="Center" FontSize="20" Foreground="#66CCFF"/>
+                        <TextBlock Text="River" HorizontalAlignment="Center" FontSize="10"/>
+                    </StackPanel>
+                </Button>
                 <Separator Margin="0,8"/>
                 <TextBlock Text="Layer" Foreground="#AAA" FontSize="11" HorizontalAlignment="Center"/>
                 <Button Name="BtnLayerElev" Click="OnSelectLayerElev" HorizontalAlignment="Stretch" Padding="4,6">
@@ -209,6 +216,25 @@
                     </StackPanel>
 
                     <Separator Margin="0,8"/>
+                    <TextBlock Text="Rivers" Foreground="#DDD" FontSize="14" FontWeight="SemiBold"/>
+                    <TextBlock Name="LblRiverCount" Text="0 rivers" Foreground="#AAA" FontSize="11"/>
+                    <Border Background="#1C1F26" CornerRadius="4" Padding="2" MinHeight="80">
+                        <ListBox Name="RiverList" Background="Transparent" BorderThickness="0"
+                                 SelectionChanged="OnRiverListSelectionChanged">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding}" Foreground="#DDD" FontSize="11" Padding="4,2"/>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </Border>
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <Button Content="+ New"   Click="OnNewRiverClick" HorizontalAlignment="Stretch"/>
+                        <Button Content="Delete"  Click="OnDeleteRiverClick" HorizontalAlignment="Stretch"/>
+                    </StackPanel>
+                    <TextBlock Text="River tool: click to add vertices to the active river." Foreground="#777" FontSize="10" TextWrapping="Wrap"/>
+
+                    <Separator Margin="0,8"/>
                     <TextBlock Text="Prefabs" Foreground="#DDD" FontSize="14" FontWeight="SemiBold"/>
                     <TextBlock Name="LblPrefabCount" Text="0 prefabs" Foreground="#AAA" FontSize="11"/>
                     <TextBlock Name="LblPrefabLibDir" Text="Library: (none)" Foreground="#777" FontSize="10" TextWrapping="Wrap"/>
@@ -313,6 +339,10 @@
                             <Path Data="M 9 0 L 18 9 L 9 18 L 0 9 Z"
                                   Fill="#99FF66AA" Stroke="#FFFF99CC" StrokeThickness="1.2"/>
                         </Canvas>
+                        <!-- River polylines + vertex handles in top-down space. -->
+                        <Path Name="RiverOverlay" IsHitTestVisible="False"
+                              Stroke="#CC66CCFF" StrokeThickness="2"
+                              Fill="#44448CFF"/>
                     </Canvas>
                     <TextBlock Text="Top-down · paint here (WASD pan · R/F zoom · right-drag pan)"
                                Foreground="#99FFFFFF"

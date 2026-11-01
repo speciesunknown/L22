@@ -9,6 +9,7 @@ using Avalonia.Threading;
 using Point = Avalonia.Point;
 using L22.Editor.Models.Objects;
 using L22.Editor.Models.Rendering;
+using L22.Editor.Models.Rivers;
 using L22.Editor.Models.Tools;
 using L22.Editor.Models.World;
 using static Avalonia.OpenGL.GlConsts;
@@ -24,6 +25,8 @@ public class TerrainViewport : OpenGlControlBase
     // when no icon is resolved and as camera-facing textured billboards
     // when one is.
     public System.Collections.Generic.IReadOnlyList<ObjectInstance>? Objects { get; set; }
+    // Rivers to show in the overlay. Updated via BindContext.
+    public System.Collections.Generic.IReadOnlyList<River>? Rivers { get; set; }
     // Prefab library the renderer resolves icon inheritance against. An
     // instance with no IconOverride falls back to its prefab's Icon.
     public PrefabLibrary? Prefabs { get; set; }
@@ -56,6 +59,14 @@ public class TerrainViewport : OpenGlControlBase
     // value into the brush VM.
     public bool DropperToolActive { get; set; }
     public event Action<int, int>? CellSampled;
+
+    // River tool: left-click in the top-down adds a vertex to the active
+    // river at the picked cell (sub-cell position by exact mouse point).
+    public bool RiverToolActive { get; set; }
+    public event Action<float, float>? RiverVertexAddRequested;
+    public event Action<string, int>? RiverVertexSelectRequested;  // riverId, vertexIndex
+    public event Action<float, float>? RiverVertexDragRequested;   // dx, dy world
+    public event Action? RiverVertexDragEnded;
 
     // Place-object tool: a click (no drag) drops a new ObjectInstance at
     // the picked cell; a drag rubber-bands a selection over objects in
@@ -175,14 +186,17 @@ public class TerrainViewport : OpenGlControlBase
             _boundContext.ObjectsChanged -= OnObjectsChanged;
             _boundContext.Prefabs.PrefabsChanged -= OnObjectsChanged;
             _boundContext.ObjectSelectionChanged -= OnObjectsChanged;
+            _boundContext.RiversChanged -= OnObjectsChanged;
         }
         BindWorld(ctx.World, allowTools ? ctx.Tools : null);
         Objects = ctx.Objects;
         Prefabs = ctx.Prefabs;
+        Rivers = ctx.Rivers;
         _boundContext = ctx;
         ctx.ObjectsChanged += OnObjectsChanged;
         ctx.Prefabs.PrefabsChanged += OnObjectsChanged;
         ctx.ObjectSelectionChanged += OnObjectsChanged;
+        ctx.RiversChanged += OnObjectsChanged;
     }
 
     private void OnObjectsChanged() => RequestFrame();
@@ -514,6 +528,14 @@ public class TerrainViewport : OpenGlControlBase
             _objectGesturePressed = true;
             _objectGestureDragging = false;
             _objectGestureStart = pos;
+            return;
+        }
+        if (props.IsLeftButtonPressed && RiverToolActive && TopDown)
+        {
+            // Fine-grained world point so sub-cell insets land where the
+            // user actually clicked.
+            var wp = PickWorldPoint(pos);
+            if (wp is { } p) RiverVertexAddRequested?.Invoke(p.x, p.y);
             return;
         }
         if (props.IsLeftButtonPressed && CornerToolActive && TopDown)

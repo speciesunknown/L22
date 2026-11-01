@@ -105,6 +105,7 @@ public partial class MainWindow : Window
         EditViewport.ObjectBoxSelectRequested += OnObjectBoxSelectRequested;
         EditViewport.ObjectSingleSelectRequested += OnObjectSingleSelectRequested;
         EditViewport.ObjectEditRequested += OnObjectEditFromViewport;
+        EditViewport.RiverVertexAddRequested += OnRiverVertexAddRequested;
 
         RegisterSliderBinding(SlRadius,    LblRadius,    TxtRadius,    v => { if (ViewModel.Brush is { } b) b.Radius = (int)Math.Round(v); }, v => ((int)Math.Round(v)).ToString());
         RegisterSliderBinding(SlStrength,  LblStrength,  TxtStrength,  v => { if (ViewModel.Brush is { } b) b.Strength = (float)v; },        v => v.ToString("0.00"));
@@ -127,6 +128,12 @@ public partial class MainWindow : Window
         // of its own renders so the frustum tracks movement.
         EditViewport.FrustumSource = FreeViewport;
         FreeViewport.MirrorFramesTo = EditViewport;
+
+        // River overlay follows the top-down camera; refresh on a cheap
+        // dispatcher tick so pan / zoom / WASD moves don't leave it stale.
+        var riverTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(60),
+            DispatcherPriority.Background, (_, _) => RefreshRiverOverlay());
+        riverTimer.Start();
 
         ViewModel.PropertyChanged += (_, _) => UpdateWindowTitle();
         UpdateWindowTitle();
@@ -537,12 +544,190 @@ public partial class MainWindow : Window
         {
             _objectsBoundContext.ObjectsChanged -= OnBoundObjectsChanged;
             _objectsBoundContext.Prefabs.PrefabsChanged -= RefreshPrefabList;
+            _objectsBoundContext.RiversChanged -= OnBoundRiversChanged;
         }
         _objectsBoundContext = ctx;
         ctx.ObjectsChanged += OnBoundObjectsChanged;
         ctx.Prefabs.PrefabsChanged += RefreshPrefabList;
+        ctx.RiversChanged += OnBoundRiversChanged;
         RefreshObjectList();
         RefreshPrefabList();
+        OnBoundRiversChanged();
+    }
+
+    private void OnBoundRiversChanged()
+    {
+        RefreshRiverList();
+        RefreshRiverOverlay();
+    }
+
+    private string? _activeRiverId;
+
+    private void RefreshRiverList()
+    {
+        if (RiverList is null) return;
+        var ctx = ViewModel.Active?.Context;
+        if (ctx is null)
+        {
+            RiverList.ItemsSource = null;
+            if (LblRiverCount is not null) LblRiverCount.Text = "0 rivers";
+            return;
+        }
+        var labels = new List<string>(ctx.Rivers.Count);
+        foreach (var r in ctx.Rivers)
+        {
+            string name = string.IsNullOrEmpty(r.Name) ? "(unnamed)" : r.Name;
+            string marker = r.Id == _activeRiverId ? "● " : "  ";
+            labels.Add($"{marker}{name}  ·  {r.Vertices.Count} vtx");
+        }
+        RiverList.ItemsSource = labels;
+        if (LblRiverCount is not null)
+            LblRiverCount.Text = $"{ctx.Rivers.Count} river" + (ctx.Rivers.Count == 1 ? "" : "s");
+    }
+
+    private void OnRiverListSelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        var ctx = ViewModel.Active?.Context;
+        if (ctx is null || RiverList is null) { _activeRiverId = null; return; }
+        int idx = RiverList.SelectedIndex;
+        _activeRiverId = (idx >= 0 && idx < ctx.Rivers.Count) ? ctx.Rivers[idx].Id : null;
+        RefreshRiverList();  // repaint the ● marker
+    }
+
+    private void OnNewRiverClick(object? sender, RoutedEventArgs e)
+    {
+        var ctx = ViewModel.Active?.Context;
+        if (ctx is null) return;
+        int nextN = ctx.Rivers.Count + 1;
+        var river = new L22.Editor.Models.Rivers.River
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            Name = $"River {nextN}",
+        };
+        var cmd = new L22.Editor.Models.Commands.AddRiverCommand(ctx, river);
+        ctx.History.ExecuteAndPush(cmd);
+        _activeRiverId = river.Id;
+        RefreshRiverList();
+    }
+
+    private void OnDeleteRiverClick(object? sender, RoutedEventArgs e)
+    {
+        var ctx = ViewModel.Active?.Context;
+        if (ctx is null || RiverList is null || RiverList.SelectedIndex < 0) return;
+        if (RiverList.SelectedIndex >= ctx.Rivers.Count) return;
+        var r = ctx.Rivers[RiverList.SelectedIndex];
+        var cmd = new L22.Editor.Models.Commands.DeleteRiverCommand(ctx, r);
+        ctx.History.ExecuteAndPush(cmd);
+        if (_activeRiverId == r.Id) _activeRiverId = null;
+    }
+
+    private void OnRiverVertexAddRequested(float worldX, float worldZ)
+    {
+        var ctx = ViewModel.Active?.Context;
+        if (ctx is null) return;
+        // Pick / create the active river. If nothing's selected, start fresh.
+        L22.Editor.Models.Rivers.River? active = null;
+        if (_activeRiverId is not null)
+            foreach (var r in ctx.Rivers)
+                if (r.Id == _activeRiverId) { active = r; break; }
+        if (active is null)
+        {
+            active = new L22.Editor.Models.Rivers.River
+            {
+                Id = Guid.NewGuid().ToString("N"),
+                Name = $"River {ctx.Rivers.Count + 1}",
+            };
+            var addCmd = new L22.Editor.Models.Commands.AddRiverCommand(ctx, active);
+            ctx.History.ExecuteAndPush(addCmd);
+            _activeRiverId = active.Id;
+        }
+        int cx = (int)Math.Floor(worldX);
+        int cy = (int)Math.Floor(worldZ);
+        float sx = worldX - cx;
+        float sy = worldZ - cy;
+        var vertex = new L22.Editor.Models.Rivers.RiverVertex
+        {
+            CellX = cx, CellY = cy,
+            SubCellX = sx, SubCellY = sy,
+            WidthWorld = 1.0f,
+        };
+        var vCmd = new L22.Editor.Models.Commands.AddRiverVertexCommand(ctx, active.Id, vertex);
+        ctx.History.ExecuteAndPush(vCmd);
+    }
+
+    // Build a StreamGeometry with the polylines of every river and small
+    // circles at each vertex, in viewport-local pixel coords.
+    private void RefreshRiverOverlay()
+    {
+        if (RiverOverlay is null) return;
+        var ctx = ViewModel.Active?.Context;
+        if (ctx is null || ctx.Rivers.Count == 0)
+        {
+            RiverOverlay.Data = null;
+            return;
+        }
+
+        int w = Math.Max(1, (int)EditViewport.Bounds.Width);
+        int h = Math.Max(1, (int)EditViewport.Bounds.Height);
+        if (w <= 1 || h <= 1) { RiverOverlay.Data = null; return; }
+        float aspect = (float)w / h;
+        var cam = EditViewport.Camera;
+        if (!cam.IsOrthographic) { RiverOverlay.Data = null; return; }
+        float halfH = cam.OrthoHalfHeight;
+        float halfW = halfH * aspect;
+
+        Point ToScreen(float wx, float wz)
+        {
+            float sx = (wx - cam.Position.X) / halfW;
+            float sy = -(wz - cam.Position.Z) / halfH;
+            return new Point((sx + 1) * 0.5 * w, (1 - sy) * 0.5 * h);
+        }
+
+        var g = new StreamGeometry();
+        using (var ctxDraw = g.Open())
+        {
+            foreach (var r in ctx.Rivers) WalkRiver(ctxDraw, r, ToScreen);
+        }
+        RiverOverlay.Data = g;
+    }
+
+    private static void WalkRiver(StreamGeometryContext ctx, L22.Editor.Models.Rivers.River r,
+                                   Func<float, float, Point> toScreen)
+    {
+        if (r.Vertices.Count >= 2)
+        {
+            var p0 = toScreen(r.Vertices[0].WorldX, r.Vertices[0].WorldZ);
+            ctx.BeginFigure(p0, isFilled: false);
+            for (int i = 1; i < r.Vertices.Count; i++)
+                ctx.LineTo(toScreen(r.Vertices[i].WorldX, r.Vertices[i].WorldZ));
+            ctx.EndFigure(isClosed: false);
+        }
+        // Dots for the vertex handles — tiny filled squares via a 2-px box.
+        foreach (var v in r.Vertices)
+        {
+            var p = toScreen(v.WorldX, v.WorldZ);
+            ctx.BeginFigure(new Point(p.X - 3, p.Y - 3), isFilled: true);
+            ctx.LineTo(new Point(p.X + 3, p.Y - 3));
+            ctx.LineTo(new Point(p.X + 3, p.Y + 3));
+            ctx.LineTo(new Point(p.X - 3, p.Y + 3));
+            ctx.EndFigure(isClosed: true);
+        }
+        foreach (var b in r.Branches) WalkRiver(ctx, b, toScreen);
+    }
+
+    private void OnSelectToolRiver(object? s, RoutedEventArgs e)
+    {
+        if (ViewModel.Brush is { } b) b.ActiveTool = ToolKind.River;
+        EditViewport.CornerToolActive = false;
+        EditViewport.DropperToolActive = false;
+        EditViewport.PlaceObjectToolActive = false;
+        EditViewport.RiverToolActive = true;
+        EditViewportHost.Cursor = new Cursor(StandardCursorType.Cross);
+        BrushOverlay.IsVisible = false;
+        DropperOverlay.IsVisible = false;
+        BoxSelectOverlay.IsVisible = false;
+        PlaceObjectOverlay.IsVisible = false;
+        UpdateLayerUi();
     }
 
     // Any object mutation (place / delete / modal-edit / undo / redo) comes
@@ -1244,6 +1429,7 @@ public partial class MainWindow : Window
         EditViewport.CornerToolActive = false;
         EditViewport.DropperToolActive = false;
         EditViewport.PlaceObjectToolActive = false;
+        EditViewport.RiverToolActive = false;
         EditViewport.ClearSelectedCorners();
         EditViewportHost.Cursor = new Cursor(StandardCursorType.None);
         DropperOverlay.IsVisible = false;
@@ -1273,6 +1459,7 @@ public partial class MainWindow : Window
         EditViewport.CornerToolActive = false;
         EditViewport.DropperToolActive = true;
         EditViewport.PlaceObjectToolActive = false;
+        EditViewport.RiverToolActive = false;
         EditViewport.ClearSelectedCorners();
         EditViewportHost.Cursor = new Cursor(StandardCursorType.None);
         BrushOverlay.IsVisible = false;
@@ -1287,6 +1474,7 @@ public partial class MainWindow : Window
         EditViewport.CornerToolActive = false;
         EditViewport.DropperToolActive = false;
         EditViewport.PlaceObjectToolActive = true;
+        EditViewport.RiverToolActive = false;
         EditViewport.ClearSelectedCorners();
         // Hide the OS cursor; the pink diamond overlay represents the drop
         // site. Matches the Brush / Corner / Dropper tools' pattern.
