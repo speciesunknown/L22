@@ -62,6 +62,11 @@ public static class WindowStateStore
             using var conn = Open();
             using var tx = conn.BeginTransaction();
             using var cmd = conn.CreateCommand();
+            // Microsoft.Data.Sqlite requires the command's Transaction to be
+            // set explicitly — otherwise ExecuteNonQuery throws the moment
+            // it sees a pending transaction, which the catch below swallows
+            // and nothing ever persists.
+            cmd.Transaction = tx;
             cmd.CommandText =
                 "INSERT INTO kv(key, value) VALUES ($k, $v) " +
                 "ON CONFLICT(key) DO UPDATE SET value = excluded.value;";

@@ -232,7 +232,16 @@
                         <Button Content="+ New"   Click="OnNewRiverClick" HorizontalAlignment="Stretch"/>
                         <Button Content="Delete"  Click="OnDeleteRiverClick" HorizontalAlignment="Stretch"/>
                     </StackPanel>
-                    <TextBlock Text="River tool: click to add vertices to the active river." Foreground="#777" FontSize="10" TextWrapping="Wrap"/>
+                    <StackPanel Name="PanRiverVertex" Spacing="4" IsVisible="False">
+                        <TextBlock Name="LblRiverVertexInfo" Text="Vertex 0" Foreground="#AAA" FontSize="11"/>
+                        <Grid ColumnDefinitions="52,38,*" ColumnSpacing="4">
+                            <TextBlock Grid.Column="0" Text="Width" Foreground="#AAA" FontSize="11" VerticalAlignment="Center"/>
+                            <TextBlock Name="LblRiverWidth" Grid.Column="1" Text="1.00" Foreground="#CCC" FontSize="11" HorizontalAlignment="Right"/>
+                            <Slider Grid.Column="2" Name="SlRiverWidth" Minimum="0.5" Maximum="10" Value="1"
+                                    PointerCaptureLost="OnRiverWidthCommit"/>
+                        </Grid>
+                    </StackPanel>
+                    <TextBlock Text="River tool: click empty to add, click vertex to select, click after selecting to branch." Foreground="#777" FontSize="10" TextWrapping="Wrap"/>
 
                     <Separator Margin="0,8"/>
                     <TextBlock Text="Prefabs" Foreground="#DDD" FontSize="14" FontWeight="SemiBold"/>
@@ -343,6 +352,10 @@
                         <Path Name="RiverOverlay" IsHitTestVisible="False"
                               Stroke="#CC66CCFF" StrokeThickness="2"
                               Fill="#44448CFF"/>
+                        <!-- Yellow halo on the selected river vertex. -->
+                        <Path Name="RiverSelectedOverlay" IsHitTestVisible="False"
+                              Stroke="#FFFFE066" StrokeThickness="2"
+                              Fill="#AAFFEE55"/>
                     </Canvas>
                     <TextBlock Text="Top-down · paint here (WASD pan · R/F zoom · right-drag pan)"
                                Foreground="#99FFFFFF"

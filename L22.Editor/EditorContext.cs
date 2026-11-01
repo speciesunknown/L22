@@ -28,6 +28,13 @@ public sealed class EditorContext
     public event System.Action? RiversChanged;
     public void RaiseRiversChanged() => RiversChanged?.Invoke();
 
+    // Currently-selected river vertex, if any. (riverId, vertexIndex). The
+    // width slider reads this; a click on empty space with a selection
+    // active creates a branch starting at the selected vertex.
+    public (string riverId, int index)? SelectedRiverVertex { get; set; }
+    public event System.Action? SelectedRiverVertexChanged;
+    public void RaiseSelectedRiverVertexChanged() => SelectedRiverVertexChanged?.Invoke();
+
     // Fired after any Objects mutation. Viewports subscribe in
     // BindContext to redraw their object cubes.
     public event System.Action? ObjectsChanged;

@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.Numerics;
+using L22.Editor.Models.Rivers;
 using L22.Editor.Models.World;
 
 namespace L22.Editor.Models.Rendering;
@@ -17,8 +19,12 @@ public sealed class ChunkMeshData
 public static class TerrainMeshBuilder
 {
     public const float ElevationScale = 14f;
+    // Phase 4 erosion depth (world units). Max amount a vertex gets pushed
+    // down inside a river's bank — tapers linearly toward the edges.
+    public const float RiverbedDepth = 0.9f;
 
-    public static ChunkMeshData Build(World.World world, Chunk chunk)
+    public static ChunkMeshData Build(World.World world, Chunk chunk,
+                                       IReadOnlyList<River>? rivers = null)
     {
         int size = Chunk.Size;
         int vside = size + 1;             // 33x33 vertices
@@ -27,6 +33,10 @@ public static class TerrainMeshBuilder
 
         var positions = new Vector3[vside * vside];
         var normals = new Vector3[vside * vside];
+        // Per-vertex "how much is this vertex inside a river band?" in [0, 1]
+        // — used by the colour pass to tint the bed blue-brown and by the
+        // caller to know which cells are "riverbed" for export.
+        var riverInfluence = new float[vside * vside];
 
         for (int vy = 0; vy < vside; vy++)
         for (int vx = 0; vx < vside; vx++)
@@ -35,34 +45,48 @@ public static class TerrainMeshBuilder
             int wy = baseY + vy;
             var (jx, jz) = Jitter.Offset(wx, wy);
             float h = SampleVertexElevation(world, wx, wy) * ElevationScale;
-            positions[vy * vside + vx] = new Vector3(wx + jx, h, wy + jz);
+            // Erosion: lower Y proportional to how close the vertex is to
+            // the river centreline within its width.
+            float wxWorld = wx + jx;
+            float wzWorld = wy + jz;
+            float influence = rivers is null ? 0f
+                : ComputeRiverInfluence(rivers, wxWorld, wzWorld);
+            if (influence > 0f) h -= influence * RiverbedDepth;
+            riverInfluence[vy * vside + vx] = influence;
+            positions[vy * vside + vx] = new Vector3(wxWorld, h, wzWorld);
         }
 
         // Cross-chunk-aware normals: central-difference the elevation sampled
         // through the world (which reads neighbour chunks). Vertices on a
         // chunk's edge see the same gradient as the matching vertex in the
-        // adjacent chunk, so lighting stays continuous across seams.
+        // adjacent chunk, so lighting stays continuous across seams. Rivers
+        // get folded in here too so the bank gradient shows as shading.
         for (int vy = 0; vy < vside; vy++)
         for (int vx = 0; vx < vside; vx++)
         {
             int wx = baseX + vx;
             int wy = baseY + vy;
-            float hL = SampleVertexElevation(world, wx - 1, wy) * ElevationScale;
-            float hR = SampleVertexElevation(world, wx + 1, wy) * ElevationScale;
-            float hD = SampleVertexElevation(world, wx, wy - 1) * ElevationScale;
-            float hU = SampleVertexElevation(world, wx, wy + 1) * ElevationScale;
+            float hL = ErodedWorldHeight(world, wx - 1, wy, rivers);
+            float hR = ErodedWorldHeight(world, wx + 1, wy, rivers);
+            float hD = ErodedWorldHeight(world, wx, wy - 1, rivers);
+            float hU = ErodedWorldHeight(world, wx, wy + 1, rivers);
             var n = new Vector3(hL - hR, 2f, hD - hU);
             normals[vy * vside + vx] = Vector3.Normalize(n);
         }
 
         // Per-vertex color: average of surrounding cells' terrain-type colors.
+        // Vertices inside a river band blend toward a wet-mud tone so the
+        // bank reads clearly even at low angles.
         var colors = new Vector3[vside * vside];
+        var mud = new Vector3(0.32f, 0.26f, 0.20f);
         for (int vy = 0; vy < vside; vy++)
         for (int vx = 0; vx < vside; vx++)
         {
             int wx = baseX + vx;
             int wy = baseY + vy;
-            colors[vy * vside + vx] = AverageCellColor(world, wx, wy);
+            var baseColor = AverageCellColor(world, wx, wy);
+            float r = riverInfluence[vy * vside + vx];
+            colors[vy * vside + vx] = r > 0f ? Vector3.Lerp(baseColor, mud, r) : baseColor;
         }
 
         var data = new ChunkMeshData
@@ -120,6 +144,66 @@ public static class TerrainMeshBuilder
     // — object placements use this to sit on the ground.
     public static float SampleSurfaceY(World.World world, int wx, int wy)
         => SampleVertexElevation(world, wx, wy) * ElevationScale;
+
+    // World-space surface Y with any river erosion applied. Used by the
+    // normal pass so bank slopes shade correctly.
+    private static float ErodedWorldHeight(World.World world, int wx, int wy,
+                                            IReadOnlyList<River>? rivers)
+    {
+        float h = SampleVertexElevation(world, wx, wy) * ElevationScale;
+        if (rivers is null) return h;
+        var (jx, jz) = Jitter.Offset(wx, wy);
+        float influence = ComputeRiverInfluence(rivers, wx + jx, wy + jz);
+        return h - influence * RiverbedDepth;
+    }
+
+    // Max "inside-the-river" factor across all rivers at the given world
+    // XZ. 0 = outside every river's band; 1 = exactly on a centreline;
+    // tapers linearly toward the far bank. Branches recurse.
+    public static float ComputeRiverInfluence(IReadOnlyList<River> rivers, float wx, float wz)
+    {
+        float best = 0f;
+        foreach (var r in rivers)
+        {
+            float f = InfluenceFromRiver(r, wx, wz);
+            if (f > best) best = f;
+        }
+        return best;
+    }
+
+    private static float InfluenceFromRiver(River r, float wx, float wz)
+    {
+        float best = 0f;
+        for (int i = 0; i < r.Vertices.Count - 1; i++)
+        {
+            var a = r.Vertices[i];
+            var b = r.Vertices[i + 1];
+            float ax = a.WorldX, az = a.WorldZ;
+            float bx = b.WorldX, bz = b.WorldZ;
+            float dx = bx - ax, dz = bz - az;
+            float len2 = dx * dx + dz * dz;
+            float t = len2 > 1e-6f
+                ? MathF.Max(0, MathF.Min(1, ((wx - ax) * dx + (wz - az) * dz) / len2))
+                : 0f;
+            float px = ax + dx * t;
+            float pz = az + dz * t;
+            float dxp = wx - px, dzp = wz - pz;
+            float dist = MathF.Sqrt(dxp * dxp + dzp * dzp);
+            float width = (1 - t) * a.WidthWorld + t * b.WidthWorld;
+            float half = MathF.Max(0.01f, width * 0.5f);
+            if (dist < half)
+            {
+                float influence = 1f - (dist / half);
+                if (influence > best) best = influence;
+            }
+        }
+        foreach (var branch in r.Branches)
+        {
+            float f = InfluenceFromRiver(branch, wx, wz);
+            if (f > best) best = f;
+        }
+        return best;
+    }
 
     // Final vertex elevation = chunk-corner contribution (bilinear across
     // the 4 chunk corners the vertex sits inside) + terrain elevation

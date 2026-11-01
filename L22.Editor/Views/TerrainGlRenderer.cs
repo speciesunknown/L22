@@ -141,7 +141,8 @@ public sealed class TerrainGlRenderer
                        bool hideUnset = false,
                        Vector3[]? frustumPoints = null,
                        GpuObjectInstance[]? objects = null,
-                       GpuRiverMesh? riverMesh = null)
+                       GpuRiverMesh? riverMesh = null,
+                       System.Collections.Generic.IReadOnlyList<L22.Editor.Models.Rivers.River>? rivers = null)
     {
         // Apply a pending world swap now that we have a live GL context.
         if (_pendingNewWorld is { } nextWorld)
@@ -177,7 +178,7 @@ public sealed class TerrainGlRenderer
                 gpu.Create(gl);
                 _chunks[cc] = gpu;
             }
-            var mesh = TerrainMeshBuilder.Build(_world, ch);
+            var mesh = TerrainMeshBuilder.Build(_world, ch, rivers);
             gpu.Upload(gl, mesh);
             ch.MeshDirty = false;
         }

@@ -64,9 +64,9 @@ public class TerrainViewport : OpenGlControlBase
     // river at the picked cell (sub-cell position by exact mouse point).
     public bool RiverToolActive { get; set; }
     public event Action<float, float>? RiverVertexAddRequested;
-    // Select / drag events deferred until Phase 3 wires vertex hit-testing;
-    // keeping the dead stubs out of the surface so the IDE isn't littered
-    // with CS0067 warnings.
+    // Journey scenario 1: hit-test on an existing vertex handle emits this
+    // (riverId, vertexIndex) so MainWindow can set it as the selection.
+    public event Action<string, int>? RiverVertexSelectRequested;
 
     // Place-object tool: a click (no drag) drops a new ObjectInstance at
     // the picked cell; a drag rubber-bands a selection over objects in
@@ -186,7 +186,7 @@ public class TerrainViewport : OpenGlControlBase
             _boundContext.ObjectsChanged -= OnObjectsChanged;
             _boundContext.Prefabs.PrefabsChanged -= OnObjectsChanged;
             _boundContext.ObjectSelectionChanged -= OnObjectsChanged;
-            _boundContext.RiversChanged -= OnObjectsChanged;
+            _boundContext.RiversChanged -= OnRiversChanged;
         }
         BindWorld(ctx.World, allowTools ? ctx.Tools : null);
         Objects = ctx.Objects;
@@ -196,7 +196,17 @@ public class TerrainViewport : OpenGlControlBase
         ctx.ObjectsChanged += OnObjectsChanged;
         ctx.Prefabs.PrefabsChanged += OnObjectsChanged;
         ctx.ObjectSelectionChanged += OnObjectsChanged;
-        ctx.RiversChanged += OnObjectsChanged;
+        ctx.RiversChanged += OnRiversChanged;
+    }
+
+    // Rivers affect terrain geometry (Phase 4 erosion), so every chunk the
+    // affected river could reach needs a re-mesh. Simplest: mark everything
+    // dirty; chunk count is small and the mesh builder is cheap.
+    private void OnRiversChanged()
+    {
+        if (World is not null)
+            foreach (var ch in World.Chunks.Values) ch.MeshDirty = true;
+        RequestFrame();
     }
 
     private void OnObjectsChanged() => RequestFrame();
@@ -303,7 +313,8 @@ public class TerrainViewport : OpenGlControlBase
                          hideUnset: !TopDown,
                          frustumPoints: frustumPoints,
                          objects: gpuObjects,
-                         riverMesh: riverMesh);
+                         riverMesh: riverMesh,
+                         rivers: Rivers);
 
         if (CaptureRequested)
         {
@@ -593,7 +604,14 @@ public class TerrainViewport : OpenGlControlBase
             // Fine-grained world point so sub-cell insets land where the
             // user actually clicked.
             var wp = PickWorldPoint(pos);
-            if (wp is { } p) RiverVertexAddRequested?.Invoke(p.x, p.y);
+            if (wp is { } p)
+            {
+                var hit = PickRiverVertex(p.x, p.y);
+                if (hit.HasValue)
+                    RiverVertexSelectRequested?.Invoke(hit.Value.riverId, hit.Value.index);
+                else
+                    RiverVertexAddRequested?.Invoke(p.x, p.y);
+            }
             return;
         }
         if (props.IsLeftButtonPressed && CornerToolActive && TopDown)
@@ -884,6 +902,40 @@ public class TerrainViewport : OpenGlControlBase
         if (t < 0) return null;
         var hit = origin + dir * t;
         return (hit.X, hit.Z);
+    }
+
+    // Nearest river vertex within RiverPickRadius world units of (wx, wz).
+    // Walks branches recursively; returns the first hit (any river).
+    private const float RiverPickRadius = 2.0f;
+    private (string riverId, int index)? PickRiverVertex(float wx, float wz)
+    {
+        if (Rivers is null) return null;
+        (string, int)? best = null;
+        float bestD2 = RiverPickRadius * RiverPickRadius;
+        foreach (var r in Rivers)
+        {
+            var hit = PickRiverVertexIn(r, wx, wz, ref bestD2);
+            if (hit.HasValue) best = hit;
+        }
+        return best;
+    }
+
+    private static (string, int)? PickRiverVertexIn(River r, float wx, float wz, ref float bestD2)
+    {
+        (string, int)? best = null;
+        for (int i = 0; i < r.Vertices.Count; i++)
+        {
+            var v = r.Vertices[i];
+            float dx = v.WorldX - wx, dz = v.WorldZ - wz;
+            float d2 = dx * dx + dz * dz;
+            if (d2 <= bestD2) { bestD2 = d2; best = (r.Id, i); }
+        }
+        foreach (var b in r.Branches)
+        {
+            var h = PickRiverVertexIn(b, wx, wz, ref bestD2);
+            if (h.HasValue) best = h;
+        }
+        return best;
     }
 
     // Nearest instance (by XZ distance) within ObjectPickRadius world units

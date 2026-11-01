@@ -106,6 +106,8 @@ public partial class MainWindow : Window
         EditViewport.ObjectSingleSelectRequested += OnObjectSingleSelectRequested;
         EditViewport.ObjectEditRequested += OnObjectEditFromViewport;
         EditViewport.RiverVertexAddRequested += OnRiverVertexAddRequested;
+        EditViewport.RiverVertexSelectRequested += OnRiverVertexSelectRequested;
+        SlRiverWidth.ValueChanged += OnRiverWidthSliderChanged;
 
         RegisterSliderBinding(SlRadius,    LblRadius,    TxtRadius,    v => { if (ViewModel.Brush is { } b) b.Radius = (int)Math.Round(v); }, v => ((int)Math.Round(v)).ToString());
         RegisterSliderBinding(SlStrength,  LblStrength,  TxtStrength,  v => { if (ViewModel.Brush is { } b) b.Strength = (float)v; },        v => v.ToString("0.00"));
@@ -138,24 +140,19 @@ public partial class MainWindow : Window
         ViewModel.PropertyChanged += (_, _) => UpdateWindowTitle();
         UpdateWindowTitle();
 
-        // Restore last session's window geometry; defer the actual Set
-        // until the first Opened so the screen bounds the window picks
-        // up match where it's actually going to live.
-        Opened += OnWindowOpenedRestoreState;
+        // Restore BEFORE the window reaches the show pipeline — in Avalonia
+        // 11 the "last-normal restore bounds" are captured from the XAML
+        // size on first layout, so setting Width / Height / Position in the
+        // Opened handler is too late for an un-maximise to land where the
+        // user last had it. WindowStartupLocation=Manual stops the window
+        // manager overriding the Position we set here.
+        RestoreWindowStateFromDisk();
         Closing += OnWindowClosingPersistState;
     }
 
-    private const string StateKeyPosX   = "window.posX";
-    private const string StateKeyPosY   = "window.posY";
-    private const string StateKeyWidth  = "window.width";
-    private const string StateKeyHeight = "window.height";
-    private const string StateKeyState  = "window.state";
-
-    private void OnWindowOpenedRestoreState(object? sender, EventArgs e)
+    private void RestoreWindowStateFromDisk()
     {
         var kv = Models.WindowStateStore.LoadAll();
-        // Size first — otherwise maximised-then-normalised will restore to
-        // the designer default rather than whatever the user last had.
         if (kv.TryGetValue(StateKeyWidth, out var ws) && double.TryParse(ws, System.Globalization.CultureInfo.InvariantCulture, out var w) && w > 100)
             Width = w;
         if (kv.TryGetValue(StateKeyHeight, out var hs) && double.TryParse(hs, System.Globalization.CultureInfo.InvariantCulture, out var h) && h > 100)
@@ -163,16 +160,21 @@ public partial class MainWindow : Window
         if (kv.TryGetValue(StateKeyPosX, out var xs) && int.TryParse(xs, out var x)
             && kv.TryGetValue(StateKeyPosY, out var ys) && int.TryParse(ys, out var y))
         {
+            WindowStartupLocation = WindowStartupLocation.Manual;
             Position = new PixelPoint(x, y);
         }
-        if (kv.TryGetValue(StateKeyState, out var st) && Enum.TryParse<WindowState>(st, out var ws2))
+        if (kv.TryGetValue(StateKeyState, out var st) && Enum.TryParse<WindowState>(st, out var ws2)
+            && (ws2 == WindowState.Maximized || ws2 == WindowState.Normal))
         {
-            // Only honour Normal / Maximized — Minimized on startup is a
-            // UX pit.
-            if (ws2 == WindowState.Maximized || ws2 == WindowState.Normal)
-                WindowState = ws2;
+            WindowState = ws2;
         }
     }
+
+    private const string StateKeyPosX   = "window.posX";
+    private const string StateKeyPosY   = "window.posY";
+    private const string StateKeyWidth  = "window.width";
+    private const string StateKeyHeight = "window.height";
+    private const string StateKeyState  = "window.state";
 
     private void OnWindowClosingPersistState(object? sender, Avalonia.Controls.WindowClosingEventArgs e)
     {
@@ -559,6 +561,7 @@ public partial class MainWindow : Window
     {
         RefreshRiverList();
         RefreshRiverOverlay();
+        RefreshRiverVertexPanel();
     }
 
     private string? _activeRiverId;
@@ -625,7 +628,53 @@ public partial class MainWindow : Window
     {
         var ctx = ViewModel.Active?.Context;
         if (ctx is null) return;
-        // Pick / create the active river. If nothing's selected, start fresh.
+
+        int cx = (int)Math.Floor(worldX);
+        int cy = (int)Math.Floor(worldZ);
+        float sx = worldX - cx;
+        float sy = worldZ - cy;
+        var vertex = new L22.Editor.Models.Rivers.RiverVertex
+        {
+            CellX = cx, CellY = cy,
+            SubCellX = sx, SubCellY = sy,
+            WidthWorld = 1.0f,
+        };
+
+        // Scenario 2: if a vertex is selected, the next empty-space click
+        // spawns a branch starting at that vertex's position and extending
+        // to the new point.
+        if (ctx.SelectedRiverVertex is { } sel)
+        {
+            var parent = FindRiverRecursive(ctx, sel.riverId);
+            if (parent is not null && sel.index >= 0 && sel.index < parent.Vertices.Count)
+            {
+                var anchor = parent.Vertices[sel.index];
+                var branch = new L22.Editor.Models.Rivers.River
+                {
+                    Id = Guid.NewGuid().ToString("N"),
+                    Name = $"{parent.Name} branch",
+                    ForkFromIndex = sel.index,
+                    Vertices =
+                    {
+                        new L22.Editor.Models.Rivers.RiverVertex
+                        {
+                            CellX = anchor.CellX, CellY = anchor.CellY,
+                            SubCellX = anchor.SubCellX, SubCellY = anchor.SubCellY,
+                            WidthWorld = anchor.WidthWorld,
+                        },
+                        vertex,
+                    },
+                };
+                var bCmd = new L22.Editor.Models.Commands.AddBranchCommand(ctx, parent.Id, branch);
+                ctx.History.ExecuteAndPush(bCmd);
+                // Keep selection on the anchor so another click extends the
+                // same branch.
+                return;
+            }
+        }
+
+        // No selection → append to the active river (creating one if the
+        // user hasn't started any yet).
         L22.Editor.Models.Rivers.River? active = null;
         if (_activeRiverId is not null)
             foreach (var r in ctx.Rivers)
@@ -641,18 +690,80 @@ public partial class MainWindow : Window
             ctx.History.ExecuteAndPush(addCmd);
             _activeRiverId = active.Id;
         }
-        int cx = (int)Math.Floor(worldX);
-        int cy = (int)Math.Floor(worldZ);
-        float sx = worldX - cx;
-        float sy = worldZ - cy;
-        var vertex = new L22.Editor.Models.Rivers.RiverVertex
-        {
-            CellX = cx, CellY = cy,
-            SubCellX = sx, SubCellY = sy,
-            WidthWorld = 1.0f,
-        };
         var vCmd = new L22.Editor.Models.Commands.AddRiverVertexCommand(ctx, active.Id, vertex);
         ctx.History.ExecuteAndPush(vCmd);
+    }
+
+    private void OnRiverVertexSelectRequested(string riverId, int index)
+    {
+        var ctx = ViewModel.Active?.Context;
+        if (ctx is null) return;
+        ctx.SelectedRiverVertex = (riverId, index);
+        ctx.RaiseSelectedRiverVertexChanged();
+        RefreshRiverVertexPanel();
+        RefreshRiverOverlay();
+    }
+
+    private void RefreshRiverVertexPanel()
+    {
+        if (PanRiverVertex is null) return;
+        var ctx = ViewModel.Active?.Context;
+        if (ctx?.SelectedRiverVertex is not { } sel)
+        {
+            PanRiverVertex.IsVisible = false;
+            return;
+        }
+        var r = FindRiverRecursive(ctx, sel.riverId);
+        if (r is null || sel.index < 0 || sel.index >= r.Vertices.Count)
+        {
+            PanRiverVertex.IsVisible = false;
+            return;
+        }
+        PanRiverVertex.IsVisible = true;
+        LblRiverVertexInfo.Text = $"{r.Name} · vertex {sel.index}";
+        float w = r.Vertices[sel.index].WidthWorld;
+        LblRiverWidth.Text = w.ToString("0.00");
+        _widthSliderQuiet = true;
+        try { SlRiverWidth.Value = Math.Clamp(w, SlRiverWidth.Minimum, SlRiverWidth.Maximum); }
+        finally { _widthSliderQuiet = false; }
+    }
+
+    private bool _widthSliderQuiet;
+    private void OnRiverWidthSliderChanged(object? sender, Avalonia.Controls.Primitives.RangeBaseValueChangedEventArgs e)
+    {
+        if (_widthSliderQuiet) return;
+        if (LblRiverWidth is not null) LblRiverWidth.Text = e.NewValue.ToString("0.00");
+    }
+
+    // Push the command only when the user lets go of the slider — avoids
+    // flooding the history stack with one command per sub-pixel drag.
+    private void OnRiverWidthCommit(object? sender, Avalonia.Input.PointerCaptureLostEventArgs e)
+    {
+        var ctx = ViewModel.Active?.Context;
+        if (ctx?.SelectedRiverVertex is not { } sel) return;
+        var cmd = new L22.Editor.Models.Commands.SetRiverVertexWidthCommand(
+            ctx, sel.riverId, sel.index, (float)SlRiverWidth.Value);
+        ctx.History.ExecuteAndPush(cmd);
+    }
+
+    private static L22.Editor.Models.Rivers.River? FindRiverRecursive(EditorContext ctx, string id)
+    {
+        foreach (var r in ctx.Rivers)
+        {
+            var hit = FindRecursive(r, id);
+            if (hit is not null) return hit;
+        }
+        return null;
+    }
+    private static L22.Editor.Models.Rivers.River? FindRecursive(L22.Editor.Models.Rivers.River r, string id)
+    {
+        if (r.Id == id) return r;
+        foreach (var b in r.Branches)
+        {
+            var hit = FindRecursive(b, id);
+            if (hit is not null) return hit;
+        }
+        return null;
     }
 
     // Build a StreamGeometry with the polylines of every river and small
@@ -664,6 +775,7 @@ public partial class MainWindow : Window
         if (ctx is null || ctx.Rivers.Count == 0)
         {
             RiverOverlay.Data = null;
+            if (RiverSelectedOverlay is not null) RiverSelectedOverlay.Data = null;
             return;
         }
 
@@ -689,6 +801,31 @@ public partial class MainWindow : Window
             foreach (var r in ctx.Rivers) WalkRiver(ctxDraw, r, ToScreen);
         }
         RiverOverlay.Data = g;
+
+        if (RiverSelectedOverlay is not null)
+        {
+            if (ctx.SelectedRiverVertex is { } sel
+                && FindRiverRecursive(ctx, sel.riverId) is { } selRiver
+                && sel.index >= 0 && sel.index < selRiver.Vertices.Count)
+            {
+                var v = selRiver.Vertices[sel.index];
+                var p = ToScreen(v.WorldX, v.WorldZ);
+                var hg = new StreamGeometry();
+                using (var dc = hg.Open())
+                {
+                    dc.BeginFigure(new Point(p.X - 6, p.Y - 6), isFilled: true);
+                    dc.LineTo(new Point(p.X + 6, p.Y - 6));
+                    dc.LineTo(new Point(p.X + 6, p.Y + 6));
+                    dc.LineTo(new Point(p.X - 6, p.Y + 6));
+                    dc.EndFigure(isClosed: true);
+                }
+                RiverSelectedOverlay.Data = hg;
+            }
+            else
+            {
+                RiverSelectedOverlay.Data = null;
+            }
+        }
     }
 
     private static void WalkRiver(StreamGeometryContext ctx, L22.Editor.Models.Rivers.River r,

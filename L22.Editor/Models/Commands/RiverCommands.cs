@@ -45,6 +45,119 @@ public sealed class DeleteRiverCommand : IEditorCommand
     }
 }
 
+// Add a branch River to a parent at the parent's selected vertex index.
+public sealed class AddBranchCommand : IEditorCommand
+{
+    private readonly EditorContext _ctx;
+    private readonly string _parentId;
+    private readonly River _branch;
+    public string Name => $"Add branch {_branch.Id} to {_parentId}";
+
+    public AddBranchCommand(EditorContext ctx, string parentId, River branch)
+    {
+        _ctx = ctx;
+        _parentId = parentId;
+        _branch = branch;
+    }
+    public void Execute(World.World world)
+    {
+        var p = FindTop(_ctx, _parentId);
+        if (p is null) return;
+        p.Branches.Add(_branch);
+        _ctx.RaiseRiversChanged();
+    }
+    public void Undo(World.World world)
+    {
+        var p = FindTop(_ctx, _parentId);
+        if (p is null) return;
+        p.Branches.Remove(_branch);
+        _ctx.RaiseRiversChanged();
+    }
+    private static River? FindTop(EditorContext ctx, string id)
+    {
+        foreach (var r in ctx.Rivers)
+        {
+            var hit = FindRecursive(r, id);
+            if (hit is not null) return hit;
+        }
+        return null;
+    }
+    private static River? FindRecursive(River r, string id)
+    {
+        if (r.Id == id) return r;
+        foreach (var b in r.Branches)
+        {
+            var hit = FindRecursive(b, id);
+            if (hit is not null) return hit;
+        }
+        return null;
+    }
+}
+
+// Scenario 3: increase the width of the selected vertex changes that
+// node *and its two neighbours*. The neighbour effect is at half the
+// delta so the taper is smooth.
+public sealed class SetRiverVertexWidthCommand : IEditorCommand
+{
+    private readonly EditorContext _ctx;
+    private readonly string _riverId;
+    private readonly int _index;
+    private readonly float _after;
+    private float[] _before = System.Array.Empty<float>();
+    public string Name => "Set river vertex width";
+
+    public SetRiverVertexWidthCommand(EditorContext ctx, string riverId, int index, float after)
+    {
+        _ctx = ctx;
+        _riverId = riverId;
+        _index = index;
+        _after = after;
+    }
+    public void Execute(World.World world)
+    {
+        var r = FindRiverAnywhere(_ctx, _riverId);
+        if (r is null || _index < 0 || _index >= r.Vertices.Count) return;
+        int prev = System.Math.Max(0, _index - 1);
+        int next = System.Math.Min(r.Vertices.Count - 1, _index + 1);
+        _before = new[] { r.Vertices[prev].WidthWorld, r.Vertices[_index].WidthWorld, r.Vertices[next].WidthWorld };
+        float delta = _after - r.Vertices[_index].WidthWorld;
+        r.Vertices[_index].WidthWorld = _after;
+        if (prev != _index) r.Vertices[prev].WidthWorld = System.Math.Max(0.1f, r.Vertices[prev].WidthWorld + delta * 0.5f);
+        if (next != _index) r.Vertices[next].WidthWorld = System.Math.Max(0.1f, r.Vertices[next].WidthWorld + delta * 0.5f);
+        _ctx.RaiseRiversChanged();
+    }
+    public void Undo(World.World world)
+    {
+        var r = FindRiverAnywhere(_ctx, _riverId);
+        if (r is null || _before.Length < 3) return;
+        int prev = System.Math.Max(0, _index - 1);
+        int next = System.Math.Min(r.Vertices.Count - 1, _index + 1);
+        r.Vertices[prev].WidthWorld = _before[0];
+        r.Vertices[_index].WidthWorld = _before[1];
+        r.Vertices[next].WidthWorld = _before[2];
+        _ctx.RaiseRiversChanged();
+    }
+    private static River? FindRiverAnywhere(EditorContext ctx, string id)
+    {
+        foreach (var r in ctx.Rivers)
+        {
+            var hit = FindRecursive(r, id);
+            if (hit is not null) return hit;
+        }
+        return null;
+    }
+    private static River? FindRecursive(River r, string id)
+    {
+        if (r.Id == id) return r;
+        foreach (var b in r.Branches)
+        {
+            var hit = FindRecursive(b, id);
+            if (hit is not null) return hit;
+        }
+        return null;
+    }
+}
+
 // Append a vertex to an existing river. Target is identified by Id so
 // undo/redo survives even if the river reference bounces through
 // serialization in a future command stack migration.
