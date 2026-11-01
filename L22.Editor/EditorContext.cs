@@ -32,6 +32,12 @@ public sealed class EditorContext
     // width slider reads this; a click on empty space with a selection
     // active creates a branch starting at the selected vertex.
     public (string riverId, int index)? SelectedRiverVertex { get; set; }
+    // Multi-selection (journey update: "GIVEN I have one or more vertices
+    // of a river selected"). The single SelectedRiverVertex above still
+    // tracks the most-recent single click for anchor-based ops like
+    // branch creation; this set holds everything the width / direction
+    // commands should sweep across.
+    public System.Collections.Generic.HashSet<(string riverId, int index)> SelectedRiverVertices { get; } = new();
     public event System.Action? SelectedRiverVertexChanged;
     public void RaiseSelectedRiverVertexChanged() => SelectedRiverVertexChanged?.Invoke();
 

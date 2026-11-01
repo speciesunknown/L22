@@ -676,6 +676,8 @@ public partial class MainWindow : Window
                 // so the next click *extends* this branch (natural flow),
                 // rather than silently creating a sibling branch off the
                 // original anchor.
+                ctx.SelectedRiverVertices.Clear();
+                ctx.SelectedRiverVertices.Add((branch.Id, 1));
                 ctx.SelectedRiverVertex = (branch.Id, 1);
                 ctx.RaiseSelectedRiverVertexChanged();
                 RefreshRiverVertexPanel();
@@ -705,10 +707,12 @@ public partial class MainWindow : Window
         ctx.History.ExecuteAndPush(vCmd);
     }
 
-    private void OnRiverVertexSelectRequested(string riverId, int index)
+    private void OnRiverVertexSelectRequested(string riverId, int index, bool addToSelection)
     {
         var ctx = ViewModel.Active?.Context;
         if (ctx is null) return;
+        if (!addToSelection) ctx.SelectedRiverVertices.Clear();
+        ctx.SelectedRiverVertices.Add((riverId, index));
         ctx.SelectedRiverVertex = (riverId, index);
         ctx.RaiseSelectedRiverVertexChanged();
         RefreshRiverVertexPanel();
@@ -731,7 +735,10 @@ public partial class MainWindow : Window
             return;
         }
         PanRiverVertex.IsVisible = true;
-        LblRiverVertexInfo.Text = $"{r.Name} · vertex {sel.index}";
+        int multi = ctx.SelectedRiverVertices.Count;
+        LblRiverVertexInfo.Text = multi > 1
+            ? $"{multi} vertices selected"
+            : $"{r.Name} · vertex {sel.index}";
         float w = r.Vertices[sel.index].WidthWorld;
         LblRiverWidth.Text = w.ToString("0.00");
         _widthSliderQuiet = true;
@@ -749,19 +756,28 @@ public partial class MainWindow : Window
     // Push the command only when the user lets go of the slider — avoids
     // flooding the history stack with one command per sub-pixel drag.
     // Fires on PointerCaptureLost (end of mouse drag / click-release on
-    // the track) and on LostFocus (keyboard-arrows then tab away).
+    // the track) and on LostFocus (keyboard-arrows then tab away). Walks
+    // every selected vertex so the multi-select case ("I have one or more
+    // vertices") lifts them all at once.
     private void OnRiverWidthCommit(object? sender, RoutedEventArgs e)
     {
         var ctx = ViewModel.Active?.Context;
-        if (ctx?.SelectedRiverVertex is not { } sel) return;
-        var r = FindRiverRecursive(ctx, sel.riverId);
-        if (r is null || sel.index < 0 || sel.index >= r.Vertices.Count) return;
-        float before = r.Vertices[sel.index].WidthWorld;
+        if (ctx is null) return;
+        if (ctx.SelectedRiverVertices.Count == 0) return;
         float after = (float)SlRiverWidth.Value;
-        if (System.Math.Abs(before - after) < 1e-4f) return;  // no-op guard
-        var cmd = new L22.Editor.Models.Commands.SetRiverVertexWidthCommand(
-            ctx, sel.riverId, sel.index, after);
-        ctx.History.ExecuteAndPush(cmd);
+        bool anyChanged = false;
+        foreach (var key in ctx.SelectedRiverVertices)
+        {
+            var r = FindRiverRecursive(ctx, key.riverId);
+            if (r is null || key.index < 0 || key.index >= r.Vertices.Count) continue;
+            float before = r.Vertices[key.index].WidthWorld;
+            if (System.Math.Abs(before - after) < 1e-4f) continue;
+            var cmd = new L22.Editor.Models.Commands.SetRiverVertexWidthCommand(
+                ctx, key.riverId, key.index, after);
+            ctx.History.ExecuteAndPush(cmd);
+            anyChanged = true;
+        }
+        if (!anyChanged) return;  // all vertices already at target
     }
 
     // Local flow direction at a river vertex: tangent at index i. If i is
@@ -842,26 +858,29 @@ public partial class MainWindow : Window
 
         if (RiverSelectedOverlay is not null)
         {
-            if (ctx.SelectedRiverVertex is { } sel
-                && FindRiverRecursive(ctx, sel.riverId) is { } selRiver
-                && sel.index >= 0 && sel.index < selRiver.Vertices.Count)
+            if (ctx.SelectedRiverVertices.Count == 0)
             {
-                var v = selRiver.Vertices[sel.index];
-                var p = ToScreen(v.WorldX, v.WorldZ);
-                var hg = new StreamGeometry();
-                using (var dc = hg.Open())
-                {
-                    dc.BeginFigure(new Point(p.X - 6, p.Y - 6), isFilled: true);
-                    dc.LineTo(new Point(p.X + 6, p.Y - 6));
-                    dc.LineTo(new Point(p.X + 6, p.Y + 6));
-                    dc.LineTo(new Point(p.X - 6, p.Y + 6));
-                    dc.EndFigure(isClosed: true);
-                }
-                RiverSelectedOverlay.Data = hg;
+                RiverSelectedOverlay.Data = null;
             }
             else
             {
-                RiverSelectedOverlay.Data = null;
+                var hg = new StreamGeometry();
+                using (var dc = hg.Open())
+                {
+                    foreach (var key in ctx.SelectedRiverVertices)
+                    {
+                        var selRiver = FindRiverRecursive(ctx, key.riverId);
+                        if (selRiver is null || key.index < 0 || key.index >= selRiver.Vertices.Count) continue;
+                        var v = selRiver.Vertices[key.index];
+                        var p = ToScreen(v.WorldX, v.WorldZ);
+                        dc.BeginFigure(new Point(p.X - 6, p.Y - 6), isFilled: true);
+                        dc.LineTo(new Point(p.X + 6, p.Y - 6));
+                        dc.LineTo(new Point(p.X + 6, p.Y + 6));
+                        dc.LineTo(new Point(p.X - 6, p.Y + 6));
+                        dc.EndFigure(isClosed: true);
+                    }
+                }
+                RiverSelectedOverlay.Data = hg;
             }
         }
     }

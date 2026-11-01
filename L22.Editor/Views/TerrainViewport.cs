@@ -65,8 +65,9 @@ public class TerrainViewport : OpenGlControlBase
     public bool RiverToolActive { get; set; }
     public event Action<float, float>? RiverVertexAddRequested;
     // Journey scenario 1: hit-test on an existing vertex handle emits this
-    // (riverId, vertexIndex) so MainWindow can set it as the selection.
-    public event Action<string, int>? RiverVertexSelectRequested;
+    // (riverId, vertexIndex, addToSelection) so MainWindow can set it as
+    // the selection or append to the running multi-select set.
+    public event Action<string, int, bool>? RiverVertexSelectRequested;
 
     // Place-object tool: a click (no drag) drops a new ObjectInstance at
     // the picked cell; a drag rubber-bands a selection over objects in
@@ -607,8 +608,9 @@ public class TerrainViewport : OpenGlControlBase
             if (wp is { } p)
             {
                 var hit = PickRiverVertex(p.x, p.y);
+                bool shift = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
                 if (hit.HasValue)
-                    RiverVertexSelectRequested?.Invoke(hit.Value.riverId, hit.Value.index);
+                    RiverVertexSelectRequested?.Invoke(hit.Value.riverId, hit.Value.index, shift);
                 else
                     RiverVertexAddRequested?.Invoke(p.x, p.y);
             }
